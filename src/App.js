@@ -35,41 +35,7 @@ const DEFAULT_DEPARTMENT_MAP = {
 
 const DEPARTMENTS = ['All', 'MD Office', 'Support', 'SSE1', 'SSE2', 'SSE3', 'SSE4', 'Purchasing', 'Accounting & Finance', 'HR & Admin', 'IT', 'Material Planning', 'Material Management', 'Songkla Branch', 'Others'];
 
-const createSampleUsers = (monthIndex) => {
-  const baseUsers = [
-    { name: 'rattana', copy: 35, print: 220, color: 0, black: 255 },
-    { name: 'srirat', copy: 28, print: 180, color: 0, black: 208 },
-    { name: 'worakeat', copy: 18, print: 145, color: 16, black: 147 },
-    { name: 'suwat', copy: 12, print: 110, color: 9, black: 113 },
-    { name: 'somying', copy: 22, print: 190, color: 4, black: 208 },
-    { name: 'lawan', copy: 16, print: 95, color: 3, black: 108 },
-    { name: 'panuwat', copy: 25, print: 155, color: 5, black: 175 },
-    { name: 'amarin', copy: 30, print: 210, color: 0, black: 240 },
-    { name: 'chanistha', copy: 20, print: 125, color: 7, black: 138 },
-    { name: 'suparat', copy: 24, print: 135, color: 6, black: 153 },
-    { name: 'pitak', copy: 17, print: 105, color: 2, black: 120 },
-    { name: 'monkawee', copy: 14, print: 90, color: 1, black: 103 }
-  ];
-
-  return baseUsers.map((user, index) => {
-    const factor = 1 + (monthIndex * 0.12) + ((index % 3) * 0.04);
-    const copy = Math.round(user.copy * factor);
-    const print = Math.round(user.print * factor);
-    const color = Math.round(user.color * factor);
-    const black = Math.round(user.black * factor);
-    return { name: user.name, copy, print, color, black, total: copy + print };
-  });
-};
-
 // ข้อมูลจำลองเพื่อให้กราฟแสดงทันที
-const DUMMY_HISTORY = [
-  { month: 'Jan-2026', copy: 1146, print: 28475, color: 173, black: 29448, total: 29621, users: createSampleUsers(0) },
-  { month: 'Feb-2026', copy: 2389, print: 26591, color: 240, black: 28740, total: 28980, users: createSampleUsers(1) },
-  { month: 'Mar-2026', copy: 3152, print: 34827, color: 2163, black: 35810, total: 37979, users: createSampleUsers(2) },
-  { month: 'Apr-2026', copy: 1658, print: 21043, color: 124, black: 22577, total: 22701, users: createSampleUsers(3) },
-  { month: 'May-2026', copy: 832, print: 25933, color: 243, black: 26522, total: 26765, users: createSampleUsers(4) },
-];
-
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const TH_MONTHS = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
 const YEARS = ['2024', '2025', '2026', '2027'];
@@ -98,6 +64,7 @@ export default function App() {
   
   const [chartView, setChartView] = useState('overall'); // 'overall', 'individual'
   const [selectedDept, setSelectedDept] = useState('All'); // แผนกที่เลือกดู
+  const [individualPeriod, setIndividualPeriod] = useState('month');
   
   const [selMonthIdx, setSelMonthIdx] = useState(new Date().getMonth());
   const [selYear, setSelYear] = useState(new Date().getFullYear().toString());
@@ -110,6 +77,26 @@ export default function App() {
   const [manageUserName, setManageUserName] = useState('');
   const [manageDept, setManageDept] = useState('IT');
   const [customDept, setCustomDept] = useState('');
+  const [isReportExportOpen, setIsReportExportOpen] = useState(false);
+  const [reportStartMonth, setReportStartMonth] = useState(0);
+  const [reportEndMonth, setReportEndMonth] = useState(new Date().getMonth());
+  const [reportYear, setReportYear] = useState(new Date().getFullYear().toString());
+  const [reportContent, setReportContent] = useState('all');
+  const [reportLayout, setReportLayout] = useState('workbook');
+
+  const detectPeriodFromFileName = (fileName) => {
+    const match = String(fileName || '').match(/(20\d{2})(0[1-9]|1[0-2])(?:[0-3]\d)?/);
+    if (!match) return null;
+    return { year: match[1], monthIndex: Number(match[2]) - 1 };
+  };
+
+  const getUploadPeriodFromFiles = (files) => {
+    for (const file of files) {
+      const period = detectPeriodFromFileName(file?.name);
+      if (period) return period;
+    }
+    return null;
+  };
 
   useEffect(() => {
     const saved = localStorage.getItem('konica_history');
@@ -120,12 +107,37 @@ export default function App() {
     if (saved && JSON.parse(saved).length > 0) {
       const parsedHistory = JSON.parse(saved);
       const legacyPurchasingUsers = ['rattana', 'srirat', 'benjawan', 'apichaya'];
-      const hasOnlyLegacySampleUsers = parsedHistory.every(item =>
-        item.users?.length > 0 && item.users.every(user => legacyPurchasingUsers.includes(user.name))
-      );
-      setHistoryData(hasOnlyLegacySampleUsers ? DUMMY_HISTORY : parsedHistory);
+      const legacySampleUsers = ['rattana', 'srirat', 'worakeat', 'suwat', 'somying', 'lawan', 'panuwat', 'amarin', 'chanistha', 'suparat', 'pitak', 'monkawee'];
+      const legacyDemoMonths = ['Jan-2026', 'Feb-2026', 'Mar-2026', 'Apr-2026', 'May-2026'];
+      const isDemoHistoryItem = (item) => {
+        const users = item.users || [];
+        const kittipat = users.find(user => user.name === 'kittipat');
+        const hasOnlyOldSampleUsers = users.length > 0 && users.every(user =>
+          legacyPurchasingUsers.includes(user.name) || legacySampleUsers.includes(user.name)
+        );
+        const hasGeneratedDemoUsers = legacyDemoMonths.includes(item.month)
+          && users.length === Object.keys(DEFAULT_DEPARTMENT_MAP).length
+          && kittipat?.copy === 24
+          && kittipat?.print === 187
+          && kittipat?.black === 271;
+        return hasOnlyOldSampleUsers || hasGeneratedDemoUsers;
+      };
+      const realHistory = parsedHistory.filter(item => !isDemoHistoryItem(item));
+      if (realHistory.length !== parsedHistory.length) {
+        setHistoryData(realHistory);
+        if (realHistory.length > 0) {
+          localStorage.setItem('konica_history', JSON.stringify(realHistory));
+        } else {
+          localStorage.removeItem('konica_history');
+        }
+      } else if (realHistory.length === 0) {
+        setHistoryData([]);
+        localStorage.removeItem('konica_history');
+      } else {
+        setHistoryData(realHistory);
+      }
     } else {
-      setHistoryData(DUMMY_HISTORY);
+      setHistoryData([]);
     }
 
     if (savedCounters) {
@@ -144,7 +156,20 @@ export default function App() {
   const handleFileChange = (index, type, file) => {
     const newFiles = type === 'prev' ? [...prevFiles] : [...currFiles];
     newFiles[index] = file;
-    type === 'prev' ? setPrevFiles(newFiles) : setCurrFiles(newFiles);
+    if (type === 'prev') {
+      setPrevFiles(newFiles);
+      return;
+    }
+
+    setCurrFiles(newFiles);
+    const detectedPeriod = getUploadPeriodFromFiles(newFiles);
+    if (detectedPeriod) {
+      setSelMonthIdx(detectedPeriod.monthIndex);
+      setSelYear(detectedPeriod.year);
+      setReportYear(detectedPeriod.year);
+      setReportEndMonth(detectedPeriod.monthIndex);
+      showToast(`ตั้งเดือนปัจจุบันเป็น ${MONTHS[detectedPeriod.monthIndex]}-${detectedPeriod.year} จากชื่อไฟล์`);
+    }
   };
 
   const removeFile = (index, type) => {
@@ -233,9 +258,9 @@ export default function App() {
 
   const getMonthKey = (monthIdx = selMonthIdx, year = selYear) => `${MONTHS[Number(monthIdx)]}-${year}`;
 
-  const getPreviousMonthKey = () => {
-    const currentMonth = Number(selMonthIdx);
-    const currentYear = Number(selYear);
+  const getPreviousMonthKey = (monthIdx = selMonthIdx, year = selYear) => {
+    const currentMonth = Number(monthIdx);
+    const currentYear = Number(year);
     const prevMonth = currentMonth === 0 ? 11 : currentMonth - 1;
     const prevYear = currentMonth === 0 ? currentYear - 1 : currentYear;
     return `${MONTHS[prevMonth]}-${prevYear}`;
@@ -253,7 +278,15 @@ export default function App() {
         return;
       }
 
-      const prevKey = getPreviousMonthKey();
+      const detectedPeriod = getUploadPeriodFromFiles(currFiles);
+      const activeMonthIdx = detectedPeriod?.monthIndex ?? Number(selMonthIdx);
+      const activeYear = detectedPeriod?.year ?? selYear;
+      if (detectedPeriod && (Number(selMonthIdx) !== detectedPeriod.monthIndex || selYear !== detectedPeriod.year)) {
+        setSelMonthIdx(detectedPeriod.monthIndex);
+        setSelYear(detectedPeriod.year);
+      }
+
+      const prevKey = getPreviousMonthKey(activeMonthIdx, activeYear);
       const prevFromBackup = prevAll.length === 0 ? (counterHistory[prevKey] || []) : [];
       const effectivePrevAll = prevAll.length > 0 ? prevAll : prevFromBackup;
 
@@ -300,7 +333,14 @@ export default function App() {
 
     const usersData = tableData.map(r => ({ ...r }));
 
-    const monthStr = `${MONTHS[selMonthIdx]}-${selYear}`;
+    const detectedPeriod = getUploadPeriodFromFiles(currFiles);
+    const activeMonthIdx = detectedPeriod?.monthIndex ?? Number(selMonthIdx);
+    const activeYear = detectedPeriod?.year ?? selYear;
+    const monthStr = `${MONTHS[activeMonthIdx]}-${activeYear}`;
+    if (detectedPeriod && (Number(selMonthIdx) !== activeMonthIdx || selYear !== activeYear)) {
+      setSelMonthIdx(activeMonthIdx);
+      setSelYear(activeYear);
+    }
     const newEntry = { month: monthStr, ...totals, users: usersData };
     
     const existingIdx = historyData.findIndex(h => h.month === monthStr);
@@ -340,6 +380,232 @@ export default function App() {
     const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body><table>${tableStr}</table></body></html>`;
     const url = URL.createObjectURL(new Blob([html], { type: 'application/vnd.ms-excel' }));
     const a = document.createElement('a'); a.href = url; a.download = `konica_report_${activeTab}.xls`; a.click();
+  };
+
+  const parseHistoryMonth = (monthKey) => {
+    const [monthText, yearText] = String(monthKey || '').split('-');
+    return {
+      monthIndex: MONTHS.indexOf(monthText),
+      year: yearText || ''
+    };
+  };
+
+  const getFilteredReportHistory = () => {
+    const start = Math.min(Number(reportStartMonth), Number(reportEndMonth));
+    const end = Math.max(Number(reportStartMonth), Number(reportEndMonth));
+
+    return historyData
+      .filter(item => {
+        const parsed = parseHistoryMonth(item.month);
+        return parsed.year === reportYear && parsed.monthIndex >= start && parsed.monthIndex <= end;
+      })
+      .sort((a, b) => parseHistoryMonth(a.month).monthIndex - parseHistoryMonth(b.month).monthIndex);
+  };
+
+  const getReportHistoryForYear = (year = reportYear) => {
+    return historyData
+      .filter(item => parseHistoryMonth(item.month).year === year)
+      .sort((a, b) => parseHistoryMonth(a.month).monthIndex - parseHistoryMonth(b.month).monthIndex);
+  };
+
+  const openReportExport = () => {
+    const yearHistory = getReportHistoryForYear(selYear);
+    setReportYear(selYear);
+    if (yearHistory.length > 0) {
+      const monthIndexes = yearHistory.map(item => parseHistoryMonth(item.month).monthIndex).filter(index => index >= 0);
+      setReportStartMonth(Math.min(...monthIndexes));
+      setReportEndMonth(Math.max(...monthIndexes));
+    } else {
+      setReportStartMonth(0);
+      setReportEndMonth(11);
+    }
+    setIsReportExportOpen(true);
+  };
+
+  const getPreviousHistoryKey = (monthKey) => {
+    const parsed = parseHistoryMonth(monthKey);
+    if (parsed.monthIndex < 0 || !parsed.year) return '';
+    const prevMonth = parsed.monthIndex === 0 ? 11 : parsed.monthIndex - 1;
+    const prevYear = parsed.monthIndex === 0 ? Number(parsed.year) - 1 : Number(parsed.year);
+    return `${MONTHS[prevMonth]}-${prevYear}`;
+  };
+
+  const getUsersFromCounterHistory = (monthKey) => {
+    const currentRows = counterHistory[monthKey] || [];
+    const previousRows = counterHistory[getPreviousHistoryKey(monthKey)] || [];
+    if (currentRows.length === 0 || previousRows.length === 0) return [];
+
+    const currentMap = aggregateUsage(currentRows);
+    const previousMap = aggregateUsage(previousRows);
+
+    return Object.keys(currentMap).map(name => {
+      const previous = previousMap[name] || { copy: 0, print: 0, color: 0, black: 0 };
+      const copy = currentMap[name].copy - previous.copy;
+      const print = currentMap[name].print - previous.print;
+      const color = currentMap[name].color - previous.color;
+      const black = currentMap[name].black - previous.black;
+      return { name, copy, print, color, black, total: copy + print };
+    });
+  };
+
+  const getReportUsersForMonth = (item) => {
+    const savedUsers = Array.isArray(item.users) ? item.users : [];
+    const counterUsers = getUsersFromCounterHistory(item.month);
+    return counterUsers.length > savedUsers.length ? counterUsers : savedUsers;
+  };
+
+  const escapeXml = (value) => String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+
+  const cellXml = (value, type = 'String') => {
+    const isNumber = type === 'Number';
+    const safeValue = isNumber ? Number(value || 0) : escapeXml(value);
+    return `<Cell><Data ss:Type="${isNumber ? 'Number' : 'String'}">${safeValue}</Data></Cell>`;
+  };
+
+  const worksheetXml = (name, headers, rows) => {
+    const safeName = escapeXml(String(name).slice(0, 31));
+    const headerXml = `<Row>${headers.map(header => cellXml(header)).join('')}</Row>`;
+    const rowsXml = rows.map(row => `<Row>${row.map(value => cellXml(value, typeof value === 'number' ? 'Number' : 'String')).join('')}</Row>`).join('');
+    return `<Worksheet ss:Name="${safeName}"><Table>${headerXml}${rowsXml}</Table></Worksheet>`;
+  };
+
+  const buildReportSheets = (records) => {
+    const summaryRows = records.map(item => [
+      item.month,
+      item.copy || 0,
+      item.print || 0,
+      item.color || 0,
+      item.black || 0,
+      item.total || 0,
+      getReportUsersForMonth(item).length
+    ]);
+
+    const departmentMapRows = {};
+    const userRows = [];
+
+    records.forEach(item => {
+      getReportUsersForMonth(item).forEach(user => {
+        const dept = departmentMap[user.name] || 'Others';
+        const key = `${item.month}|${dept}`;
+        if (!departmentMapRows[key]) {
+          departmentMapRows[key] = {
+            month: item.month,
+            dept,
+            copy: 0,
+            print: 0,
+            color: 0,
+            black: 0,
+            total: 0
+          };
+        }
+
+        departmentMapRows[key].copy += user.copy || 0;
+        departmentMapRows[key].print += user.print || 0;
+        departmentMapRows[key].color += user.color || 0;
+        departmentMapRows[key].black += user.black || 0;
+        departmentMapRows[key].total += getStackTotal(user);
+
+        userRows.push([
+          item.month,
+          user.name,
+          dept,
+          hiddenUsers.includes(user.name) ? 'Hidden from individual chart' : 'Shown',
+          user.copy || 0,
+          user.print || 0,
+          user.color || 0,
+          user.black || 0,
+          getStackTotal(user)
+        ]);
+      });
+    });
+
+    const departmentRows = Object.values(departmentMapRows)
+      .sort((a, b) => a.month.localeCompare(b.month) || a.dept.localeCompare(b.dept))
+      .map(row => [row.month, row.dept, row.copy, row.print, row.color, row.black, row.total]);
+
+    const sheets = [];
+    const includeSummary = reportContent === 'all' || reportContent === 'summary';
+    const includeDepartment = reportContent === 'all' || reportContent === 'department';
+    const includeUsers = reportContent === 'all' || reportContent === 'users';
+
+    if (reportLayout === 'month') {
+      records.forEach(item => {
+        const monthRows = getReportUsersForMonth(item).map(user => [
+          user.name,
+          departmentMap[user.name] || 'Others',
+          user.copy || 0,
+          user.print || 0,
+          user.color || 0,
+          user.black || 0,
+          getStackTotal(user)
+        ]);
+        sheets.push(worksheetXml(item.month, ['User', 'Department', 'Copy', 'Print', 'Color', 'Black', 'Total'], monthRows));
+      });
+      return sheets;
+    }
+
+    if (reportLayout === 'department') {
+      const departments = Array.from(new Set(userRows.map(row => row[2]))).sort();
+      departments.forEach(dept => {
+        const rows = userRows
+          .filter(row => row[2] === dept)
+          .map(([month, user, department, status, copy, print, color, black, total]) => [month, user, status, copy, print, color, black, total]);
+        sheets.push(worksheetXml(dept, ['Month', 'User', 'Chart Status', 'Copy', 'Print', 'Color', 'Black', 'Total'], rows));
+      });
+      return sheets;
+    }
+
+    if (includeSummary) {
+      sheets.push(worksheetXml('Summary', ['Month', 'Copy', 'Print', 'Color', 'Black', 'Total', 'Users'], summaryRows));
+    }
+
+    if (includeDepartment) {
+      sheets.push(worksheetXml('Department', ['Month', 'Department', 'Copy', 'Print', 'Color', 'Black', 'Total'], departmentRows));
+    }
+
+    if (includeUsers) {
+      sheets.push(worksheetXml('Users', ['Month', 'User', 'Department', 'Chart Status', 'Copy', 'Print', 'Color', 'Black', 'Total'], userRows));
+    }
+
+    return sheets;
+  };
+
+  const exportMonthlyReport = () => {
+    const records = getFilteredReportHistory();
+    if (records.length === 0) {
+      showToast('ไม่มีข้อมูลประวัติกราฟในช่วงเดือนที่เลือก');
+      return;
+    }
+
+    const sheets = buildReportSheets(records);
+    const workbook = `<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+  xmlns:o="urn:schemas-microsoft-com:office:office"
+  xmlns:x="urn:schemas-microsoft-com:office:excel"
+  xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+  <DocumentProperties xmlns="urn:schemas-microsoft-com:office:office">
+    <Author>KONICA Printer Summary</Author>
+    <Created>${new Date().toISOString()}</Created>
+  </DocumentProperties>
+  ${sheets.join('')}
+</Workbook>`;
+
+    const startMonth = MONTHS[Math.min(Number(reportStartMonth), Number(reportEndMonth))];
+    const endMonth = MONTHS[Math.max(Number(reportStartMonth), Number(reportEndMonth))];
+    const url = URL.createObjectURL(new Blob([workbook], { type: 'application/vnd.ms-excel;charset=utf-8' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `konica_monthly_report_${startMonth}-${endMonth}_${reportYear}.xls`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setIsReportExportOpen(false);
+    showToast('ส่งออกรายงาน Excel เรียบร้อย');
   };
 
   const exportHistoryBackup = () => {
@@ -557,10 +823,34 @@ export default function App() {
     return Array.from(names).sort((a, b) => a.localeCompare(b));
   }, [departmentMap, historyData, tableData, rawPrevData, rawCurrData, hiddenUsers]);
 
+  const currentUploadPeriod = getUploadPeriodFromFiles(currFiles);
+  const activePeriodMonthIdx = currentUploadPeriod?.monthIndex ?? Number(selMonthIdx);
+  const activePeriodYear = currentUploadPeriod?.year ?? selYear;
+  const activePreviousMonthKey = getPreviousMonthKey(activePeriodMonthIdx, activePeriodYear);
+  const activePeriodSource = currentUploadPeriod ? 'จากไฟล์ปัจจุบันที่อัปโหลด' : 'จากเดือนที่เลือก';
+  const activeBaselineStatus = currentUploadPeriod
+    ? (counterHistory[activePreviousMonthKey] ? 'พร้อมใช้เป็นฐานคำนวณ' : 'ยังไม่มีข้อมูลฐาน ต้องอัปโหลดไฟล์เดือนก่อนหน้าหรือบันทึกเดือนก่อนก่อน')
+    : 'รอเลือกไฟล์เดือนปัจจุบันเพื่อยืนยันฐานคำนวณ';
+
+  const overallHistory = useMemo(() => {
+    return historyData.filter(item => {
+      const parsed = parseHistoryMonth(item.month);
+      return parsed.year === selYear;
+    }).sort((a, b) => parseHistoryMonth(a.month).monthIndex - parseHistoryMonth(b.month).monthIndex);
+  }, [historyData, selYear]);
+
+  const individualHistorySource = useMemo(() => {
+    return overallHistory.filter(item => {
+      if (individualPeriod === 'year') return true;
+      const parsed = parseHistoryMonth(item.month);
+      return parsed.monthIndex === Number(activePeriodMonthIdx);
+    });
+  }, [overallHistory, individualPeriod, activePeriodMonthIdx]);
+
   // -------------------------------------------------------------
   // กราฟภาพรวม (Overall Chart)
   // -------------------------------------------------------------
-  const maxDataVal = historyData.length > 0 ? Math.max(...historyData.map(d => Math.max(d.total, d.copy, d.print, d.color, d.black))) : 40000;
+  const maxDataVal = overallHistory.length > 0 ? Math.max(...overallHistory.map(d => Math.max(d.total, d.copy, d.print, d.color, d.black))) : 40000;
   const yStep = Math.ceil(maxDataVal / 10 / 1000) * 1000 || 4000;
   const yMax = yStep * 10;
   const yTicks = Array.from({length: 11}, (_, i) => i * yStep).reverse();
@@ -569,7 +859,9 @@ export default function App() {
   // -------------------------------------------------------------
   // กราฟรายบุคคล (Individual Chart)
   // -------------------------------------------------------------
-  const individualHistory = historyData.filter(h => h.users && h.users.length > 0);
+  const individualHistory = individualHistorySource
+    .map(item => ({ ...item, users: getReportUsersForMonth(item) }))
+    .filter(h => h.users && h.users.length > 0);
   
   // รวบรวมรายชื่อและยอดตามแผนกที่เลือก
   const allUsersInDeptMap = {};
@@ -601,7 +893,7 @@ export default function App() {
   const yTicksIndv = Array.from({length: 6}, (_, i) => i * yStepIndv).reverse();
 
   // ปรับขยายความกว้างและขนาดเพื่อให้ตัวอักษรไม่โดนบีบ
-  const userGroupWidth = Math.max(historyData.length * 45, 160); // 👈 เพิ่มความกว้างต่อบุคคลเป็นอย่างน้อย 160px
+  const userGroupWidth = Math.max(individualHistory.length * 45, 160); // 👈 เพิ่มความกว้างต่อบุคคลเป็นอย่างน้อย 160px
   const indvChartWidth = Math.max(900, displayUsers.length * userGroupWidth);
 
   const getShortThMonth = (enMonthStr) => {
@@ -610,6 +902,11 @@ export default function App() {
     const thShort = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
     return idx >= 0 ? thShort[idx] : mStr;
   };
+
+  const individualPeriodLabel = individualPeriod === 'year'
+    ? `ทั้งปี ${selYear}`
+    : getMonthKey(activePeriodMonthIdx, activePeriodYear);
+  const filteredReportHistory = getFilteredReportHistory();
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-8 font-sans text-gray-800">
@@ -633,8 +930,13 @@ export default function App() {
               <Upload className="text-blue-500" size={22} /> 1. อัปโหลดไฟล์สำหรับคำนวณ
             </h2>
             <p className="mt-2 text-sm text-gray-500">
-              เดือนนี้: <span className="font-semibold text-gray-700">{getMonthKey()}</span> | baseline อัตโนมัติเดือนก่อนหน้า: <span className="font-semibold text-gray-700">{getPreviousMonthKey()}</span>
-              {counterHistory[getPreviousMonthKey()] ? ' พร้อมใช้งาน' : ' ยังไม่มีข้อมูลสำรอง'}
+              เดือนที่จะคำนวณ: <span className="font-semibold text-gray-700">{getMonthKey(activePeriodMonthIdx, activePeriodYear)}</span>
+              <span className="text-gray-400"> ({activePeriodSource})</span>
+              <span className="mx-1 text-gray-300">|</span>
+              ฐานที่จะใช้คำนวณ: <span className="font-semibold text-gray-700">{activePreviousMonthKey}</span>
+              <span className={currentUploadPeriod && counterHistory[activePreviousMonthKey] ? 'ml-1 text-emerald-600' : 'ml-1 text-amber-600'}>
+                {activeBaselineStatus}
+              </span>
             </p>
           </div>
 
@@ -804,7 +1106,7 @@ export default function App() {
             <div className="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-4 rounded-lg border border-gray-200 bg-gray-50 p-4" data-html2canvas-ignore>
               <div className="flex flex-wrap items-end gap-3">
                 <div>
-                  <label htmlFor="history-month" className="block text-xs font-semibold text-gray-500 mb-1">เดือนที่บันทึก</label>
+                  <label htmlFor="history-month" className="block text-xs font-semibold text-gray-500 mb-1">เดือนที่แสดง/บันทึก</label>
                   <select id="history-month" className="border border-gray-300 rounded px-2 py-1.5 text-sm bg-white outline-none focus:ring-2 focus:ring-blue-200" value={selMonthIdx} onChange={e => setSelMonthIdx(e.target.value)}>
                     {TH_MONTHS.map((m, i) => <option key={i} value={i}>{m}</option>)}
                   </select>
@@ -815,6 +1117,15 @@ export default function App() {
                     {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
                   </select>
                 </div>
+                {chartView === 'individual' && (
+                  <div>
+                    <label htmlFor="individual-period" className="block text-xs font-semibold text-gray-500 mb-1">ช่วงเวลา</label>
+                    <select id="individual-period" className="min-w-[150px] border border-gray-300 rounded px-2 py-1.5 text-sm bg-white outline-none focus:ring-2 focus:ring-blue-200" value={individualPeriod} onChange={e => setIndividualPeriod(e.target.value)}>
+                      <option value="month">เดือนที่เลือก</option>
+                      <option value="year">ทั้งปี</option>
+                    </select>
+                  </div>
+                )}
                 {chartView === 'individual' && (
                   <div>
                     <label htmlFor="department-filter" className="block text-xs font-semibold text-gray-500 mb-1">แผนก</label>
@@ -831,6 +1142,9 @@ export default function App() {
                 </button>
                 <button onClick={handleSaveImage} disabled={isSavingImg} className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white px-3 py-1.5 rounded flex items-center gap-1 text-sm font-medium transition-colors">
                   <ImageIcon size={16} /> {isSavingImg ? 'กำลังโหลด...' : 'เซฟเป็นภาพ'}
+                </button>
+                <button onClick={openReportExport} className="bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 rounded flex items-center gap-1 text-sm font-medium transition-colors">
+                  <FileDown size={16} /> ส่งออกรายงาน
                 </button>
                 <button onClick={exportHistoryBackup} className="bg-slate-700 hover:bg-slate-800 text-white px-3 py-1.5 rounded flex items-center gap-1 text-sm font-medium transition-colors">
                   <FileDown size={16} /> สำรองข้อมูล
@@ -857,6 +1171,91 @@ export default function App() {
             )}
           </div>
 
+          {isReportExportOpen && (
+            <div className="border-t border-teal-100 bg-teal-50/70 p-5" role="dialog" aria-modal="true" aria-labelledby="report-export-title" data-html2canvas-ignore>
+              <div className="rounded-xl border border-teal-200 bg-white p-4 shadow-sm">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div>
+                    <h3 id="report-export-title" className="text-base font-bold text-gray-800">ส่งออกรายงานรายเดือนเป็น Excel</h3>
+                    <p className="mt-1 text-sm text-gray-600">ดึงข้อมูลจากประวัติกราฟที่บันทึกไว้ แล้วจัดเป็น workbook สำหรับสรุปย้อนหลัง</p>
+                  </div>
+                  <button onClick={() => setIsReportExportOpen(false)} className="self-start rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50">
+                    ปิด
+                  </button>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-5">
+                  <div>
+                    <label htmlFor="report-year" className="block text-xs font-semibold text-gray-500 mb-1">ปี</label>
+                    <select id="report-year" value={reportYear} onChange={(e) => setReportYear(e.target.value)} className="w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-teal-200">
+                      {YEARS.map(year => <option key={year} value={year}>{year}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="report-start-month" className="block text-xs font-semibold text-gray-500 mb-1">ตั้งแต่เดือน</label>
+                    <select id="report-start-month" value={reportStartMonth} onChange={(e) => setReportStartMonth(e.target.value)} className="w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-teal-200">
+                      {TH_MONTHS.map((month, index) => <option key={month} value={index}>{month}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="report-end-month" className="block text-xs font-semibold text-gray-500 mb-1">ถึงเดือน</label>
+                    <select id="report-end-month" value={reportEndMonth} onChange={(e) => setReportEndMonth(e.target.value)} className="w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-teal-200">
+                      {TH_MONTHS.map((month, index) => <option key={month} value={index}>{month}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="report-content" className="block text-xs font-semibold text-gray-500 mb-1">เนื้อหา</label>
+                    <select id="report-content" value={reportContent} onChange={(e) => setReportContent(e.target.value)} className="w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-teal-200">
+                      <option value="all">รวมทั้งหมด</option>
+                      <option value="summary">ภาพรวมรายเดือน</option>
+                      <option value="department">แยกตามแผนก</option>
+                      <option value="users">รายบุคคล</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="report-layout" className="block text-xs font-semibold text-gray-500 mb-1">รูปแบบไฟล์</label>
+                    <select id="report-layout" value={reportLayout} onChange={(e) => setReportLayout(e.target.value)} className="w-full rounded border border-gray-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-teal-200">
+                      <option value="workbook">Workbook สรุป 3 Sheet</option>
+                      <option value="month">แยก Sheet ตามเดือน</option>
+                      <option value="department">แยก Sheet ตามแผนก</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    onClick={() => { setReportStartMonth(0); setReportEndMonth(11); }}
+                    className="rounded border border-teal-200 bg-white px-3 py-1.5 text-sm font-medium text-teal-700 hover:bg-teal-50"
+                  >
+                    ทั้งปี
+                  </button>
+                  <button
+                    onClick={() => { const end = Number(selMonthIdx); setReportYear(selYear); setReportStartMonth(Math.max(0, end - 2)); setReportEndMonth(end); }}
+                    className="rounded border border-teal-200 bg-white px-3 py-1.5 text-sm font-medium text-teal-700 hover:bg-teal-50"
+                  >
+                    ย้อนหลัง 3 เดือน
+                  </button>
+                  <button
+                    onClick={() => { setReportYear(selYear); setReportStartMonth(Number(selMonthIdx)); setReportEndMonth(Number(selMonthIdx)); }}
+                    className="rounded border border-teal-200 bg-white px-3 py-1.5 text-sm font-medium text-teal-700 hover:bg-teal-50"
+                  >
+                    เดือนที่เลือกบนกราฟ
+                  </button>
+                </div>
+
+                <div className="mt-4 flex flex-col gap-3 rounded-lg border border-teal-100 bg-teal-50 p-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-sm text-gray-600">
+                    พร้อมส่งออก <span className="font-bold text-gray-800">{filteredReportHistory.length.toLocaleString()}</span> เดือน จากประวัติที่บันทึกไว้
+                    {filteredReportHistory.length === 0 && <span className="block text-amber-600">ไม่มีข้อมูลในช่วงนี้ เลือกทั้งปีหรือช่วงเดือนที่มีข้อมูลก่อนส่งออก</span>}
+                  </p>
+                  <button disabled={filteredReportHistory.length === 0} onClick={exportMonthlyReport} className="rounded bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700 disabled:cursor-not-allowed disabled:bg-gray-300">
+                    ส่งออก Excel
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div id="chart-container" className="bg-white">
             
             {/* --- ภาพรวม --- */}
@@ -877,21 +1276,21 @@ export default function App() {
                     ))}
                     
                     <svg className="absolute inset-0 w-full h-full pointer-events-none" preserveAspectRatio="none" style={{ zIndex: 10 }}>
-                      {historyData.map((d, i) => {
+                      {overallHistory.map((d, i) => {
                         if (i === 0) return null;
-                        const x1 = `${((i - 1) + 0.5) * (100 / historyData.length)}%`;
-                        const y1 = `${100 - (historyData[i-1].total / yMaxLine * 100)}%`;
-                        const x2 = `${(i + 0.5) * (100 / historyData.length)}%`;
+                        const x1 = `${((i - 1) + 0.5) * (100 / overallHistory.length)}%`;
+                        const y1 = `${100 - (overallHistory[i-1].total / yMaxLine * 100)}%`;
+                        const x2 = `${(i + 0.5) * (100 / overallHistory.length)}%`;
                         const y2 = `${100 - (d.total / yMaxLine * 100)}%`;
                         return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#f59e0b" strokeWidth="2" strokeDasharray="6,4" />
                       })}
                     </svg>
 
                     <div className="absolute inset-0 flex">
-                      {historyData.map((d, i) => {
+                      {overallHistory.map((d, i) => {
                         const hTotalLine = (d.total / yMaxLine) * 100;
-                        const diff = i > 0 ? d.total - historyData[i-1].total : 0;
-                        const diffPercent = i > 0 && historyData[i-1].total > 0 ? (diff / historyData[i-1].total) * 100 : 0;
+                        const diff = i > 0 ? d.total - overallHistory[i-1].total : 0;
+                        const diffPercent = i > 0 && overallHistory[i-1].total > 0 ? (diff / overallHistory[i-1].total) * 100 : 0;
                         const tooltip = `${d.month} | รวม ${d.total.toLocaleString()} แผ่น | Copy ${d.copy.toLocaleString()} | Print ${d.print.toLocaleString()} | Color ${d.color.toLocaleString()} | Black ${d.black.toLocaleString()}${i > 0 ? ` | เปลี่ยนแปลง ${formatDelta(diff, diffPercent)}` : ''}`;
                         
                         return (
@@ -953,7 +1352,7 @@ export default function App() {
                 
                 <div className="flex flex-col items-center mb-6" data-html2canvas-show>
                   <h3 className="font-bold text-gray-700 text-lg mb-4">
-                    รายงานการใช้เครื่อง KONICA แบบรายบุคคล | {selectedDept !== 'All' ? `แผนก ${selectedDept}` : 'ทุกแผนก'} | ประจำปี {selYear}
+                    รายงานการใช้เครื่อง KONICA แบบรายบุคคล | {selectedDept !== 'All' ? `แผนก ${selectedDept}` : 'ทุกแผนก'} | {individualPeriodLabel}
                   </h3>
                 </div>
 
