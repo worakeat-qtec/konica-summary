@@ -3,11 +3,8 @@ import { Upload, FileDown, Trash2, BarChart3, AlertCircle, Save, Image as ImageI
 
 const IGNORE_NAMES = ['konica', 'boxadmin', 'konica360', 'public'];
 
-// 🛑 รายชื่อพนักงานที่ลาออก หรือไม่ต้องการให้แสดงใน "กราฟบุคคล" (พิมพ์ตัวพิมพ์เล็กทั้งหมด)
-const HIDE_USERS = ['ใส่ชื่อคนที่1', 'ใส่ชื่อคนที่2'];
-
 // 🏢 ฐานข้อมูลแผนก (อ้างอิงจาก PDF)
-const DEPARTMENT_MAP = {
+const DEFAULT_DEPARTMENT_MAP = {
   // MD Office
   'sittichai': 'MD Office', 'sicha': 'MD Office', 'jantana': 'MD Office', 'maytinee': 'MD Office', 'thitapa': 'MD Office', 'siramol': 'MD Office', 'jeerasak': 'MD Office', 'phariya': 'MD Office', 'phongchathep': 'MD Office',
   // Support
@@ -38,13 +35,39 @@ const DEPARTMENT_MAP = {
 
 const DEPARTMENTS = ['All', 'MD Office', 'Support', 'SSE1', 'SSE2', 'SSE3', 'SSE4', 'Purchasing', 'Accounting & Finance', 'HR & Admin', 'IT', 'Material Planning', 'Material Management', 'Songkla Branch', 'Others'];
 
+const createSampleUsers = (monthIndex) => {
+  const baseUsers = [
+    { name: 'rattana', copy: 35, print: 220, color: 0, black: 255 },
+    { name: 'srirat', copy: 28, print: 180, color: 0, black: 208 },
+    { name: 'worakeat', copy: 18, print: 145, color: 16, black: 147 },
+    { name: 'suwat', copy: 12, print: 110, color: 9, black: 113 },
+    { name: 'somying', copy: 22, print: 190, color: 4, black: 208 },
+    { name: 'lawan', copy: 16, print: 95, color: 3, black: 108 },
+    { name: 'panuwat', copy: 25, print: 155, color: 5, black: 175 },
+    { name: 'amarin', copy: 30, print: 210, color: 0, black: 240 },
+    { name: 'chanistha', copy: 20, print: 125, color: 7, black: 138 },
+    { name: 'suparat', copy: 24, print: 135, color: 6, black: 153 },
+    { name: 'pitak', copy: 17, print: 105, color: 2, black: 120 },
+    { name: 'monkawee', copy: 14, print: 90, color: 1, black: 103 }
+  ];
+
+  return baseUsers.map((user, index) => {
+    const factor = 1 + (monthIndex * 0.12) + ((index % 3) * 0.04);
+    const copy = Math.round(user.copy * factor);
+    const print = Math.round(user.print * factor);
+    const color = Math.round(user.color * factor);
+    const black = Math.round(user.black * factor);
+    return { name: user.name, copy, print, color, black, total: copy + print };
+  });
+};
+
 // ข้อมูลจำลองเพื่อให้กราฟแสดงทันที
 const DUMMY_HISTORY = [
-  { month: 'Jan-2026', copy: 1146, print: 28475, color: 173, black: 29448, total: 29621, users: [{name: 'rattana', copy: 107, print: 40, color: 7, black: 140, total: 294}, {name: 'srirat', copy: 68, print: 89, color: 0, black: 157, total: 314}, {name: 'benjawan', copy: 48, print: 187, color: 0, black: 235, total: 470}, {name: 'apichaya', copy: 15, print: 340, color: 0, black: 355, total: 710}] },
-  { month: 'Feb-2026', copy: 2389, print: 26591, color: 240, black: 28740, total: 28980, users: [{name: 'rattana', copy: 32, print: 29, color: 5, black: 32, total: 98}, {name: 'srirat', copy: 22, print: 247, color: 0, black: 269, total: 538}, {name: 'benjawan', copy: 46, print: 49, color: 0, black: 49, total: 144}, {name: 'apichaya', copy: 18, print: 442, color: 0, black: 449, total: 909}] },
-  { month: 'Mar-2026', copy: 3152, print: 34827, color: 2163, black: 35810, total: 37979, users: [{name: 'rattana', copy: 39, print: 29, color: 9, black: 29, total: 106}, {name: 'srirat', copy: 53, print: 133, color: 0, black: 186, total: 372}, {name: 'benjawan', copy: 42, print: 56, color: 0, black: 56, total: 154}, {name: 'apichaya', copy: 22, print: 499, color: 0, black: 517, total: 1038}] },
-  { month: 'Apr-2026', copy: 1658, print: 21043, color: 124, black: 22577, total: 22701, users: [{name: 'rattana', copy: 0, print: 0, color: 0, black: 0, total: 0}, {name: 'srirat', copy: 20, print: 20, color: 0, black: 20, total: 60}, {name: 'benjawan', copy: 38, print: 47, color: 0, black: 47, total: 132}, {name: 'apichaya', copy: 34, print: 429, color: 0, black: 463, total: 926}] },
-  { month: 'May-2026', copy: 832, print: 25933, color: 243, black: 26522, total: 26765, users: [{name: 'rattana', copy: 0, print: 0, color: 0, black: 0, total: 0}, {name: 'srirat', copy: 30, print: 256, color: 0, black: 286, total: 572}, {name: 'benjawan', copy: 15, print: 340, color: 0, black: 355, total: 710}, {name: 'apichaya', copy: 41, print: 330, color: 0, black: 371, total: 742}] },
+  { month: 'Jan-2026', copy: 1146, print: 28475, color: 173, black: 29448, total: 29621, users: createSampleUsers(0) },
+  { month: 'Feb-2026', copy: 2389, print: 26591, color: 240, black: 28740, total: 28980, users: createSampleUsers(1) },
+  { month: 'Mar-2026', copy: 3152, print: 34827, color: 2163, black: 35810, total: 37979, users: createSampleUsers(2) },
+  { month: 'Apr-2026', copy: 1658, print: 21043, color: 124, black: 22577, total: 22701, users: createSampleUsers(3) },
+  { month: 'May-2026', copy: 832, print: 25933, color: 243, black: 26522, total: 26765, users: createSampleUsers(4) },
 ];
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -69,6 +92,9 @@ export default function App() {
   
   const [activeTab, setActiveTab] = useState('summary');
   const [historyData, setHistoryData] = useState([]);
+  const [counterHistory, setCounterHistory] = useState({});
+  const [departmentMap, setDepartmentMap] = useState(DEFAULT_DEPARTMENT_MAP);
+  const [hiddenUsers, setHiddenUsers] = useState([]);
   
   const [chartView, setChartView] = useState('overall'); // 'overall', 'individual'
   const [selectedDept, setSelectedDept] = useState('All'); // แผนกที่เลือกดู
@@ -79,13 +105,39 @@ export default function App() {
   const [sortConfig, setSortConfig] = useState({ key: 'total', direction: 'desc' });
   const [error, setError] = useState('');
   const [isSavingImg, setIsSavingImg] = useState(false);
+  const [toast, setToast] = useState('');
+  const [isConfirmingClear, setIsConfirmingClear] = useState(false);
+  const [manageUserName, setManageUserName] = useState('');
+  const [manageDept, setManageDept] = useState('IT');
+  const [customDept, setCustomDept] = useState('');
 
   useEffect(() => {
     const saved = localStorage.getItem('konica_history');
+    const savedCounters = localStorage.getItem('konica_counter_history');
+    const savedDepartments = localStorage.getItem('konica_department_map');
+    const savedHiddenUsers = localStorage.getItem('konica_hidden_users');
+
     if (saved && JSON.parse(saved).length > 0) {
-      setHistoryData(JSON.parse(saved));
+      const parsedHistory = JSON.parse(saved);
+      const legacyPurchasingUsers = ['rattana', 'srirat', 'benjawan', 'apichaya'];
+      const hasOnlyLegacySampleUsers = parsedHistory.every(item =>
+        item.users?.length > 0 && item.users.every(user => legacyPurchasingUsers.includes(user.name))
+      );
+      setHistoryData(hasOnlyLegacySampleUsers ? DUMMY_HISTORY : parsedHistory);
     } else {
       setHistoryData(DUMMY_HISTORY);
+    }
+
+    if (savedCounters) {
+      setCounterHistory(JSON.parse(savedCounters));
+    }
+
+    if (savedDepartments) {
+      setDepartmentMap({ ...DEFAULT_DEPARTMENT_MAP, ...JSON.parse(savedDepartments) });
+    }
+
+    if (savedHiddenUsers) {
+      setHiddenUsers(JSON.parse(savedHiddenUsers));
     }
   }, []);
 
@@ -161,6 +213,34 @@ export default function App() {
     return data;
   };
 
+  const aggregateUsage = (rows) => {
+    const map = {};
+    rows.forEach(d => {
+      if (!map[d.name]) map[d.name] = { copy: 0, print: 0, color: 0, black: 0 };
+      map[d.name].copy += d.copy;
+      map[d.name].print += d.print;
+      map[d.name].color += d.color;
+      map[d.name].black += d.black;
+    });
+    return map;
+  };
+
+  const rowsFromUsageMap = (map) => Object.keys(map).map(name => ({
+    name,
+    ...map[name],
+    total: map[name].copy + map[name].print
+  }));
+
+  const getMonthKey = (monthIdx = selMonthIdx, year = selYear) => `${MONTHS[Number(monthIdx)]}-${year}`;
+
+  const getPreviousMonthKey = () => {
+    const currentMonth = Number(selMonthIdx);
+    const currentYear = Number(selYear);
+    const prevMonth = currentMonth === 0 ? 11 : currentMonth - 1;
+    const prevYear = currentMonth === 0 ? currentYear - 1 : currentYear;
+    return `${MONTHS[prevMonth]}-${prevYear}`;
+  };
+
   const calculateData = async () => {
     try {
       setError('');
@@ -168,22 +248,26 @@ export default function App() {
       for (const f of prevFiles) if (f) prevAll = prevAll.concat(await parseFile(f));
       for (const f of currFiles) if (f) currAll = currAll.concat(await parseFile(f));
 
-      const prevMap = {};
-      prevAll.forEach(d => {
-        if (!prevMap[d.name]) prevMap[d.name] = { copy: 0, print: 0, color: 0, black: 0 };
-        prevMap[d.name].copy += d.copy; prevMap[d.name].print += d.print;
-        prevMap[d.name].color += d.color; prevMap[d.name].black += d.black;
-      });
+      if (currAll.length === 0) {
+        setError('กรุณาอัปโหลดไฟล์เดือนปัจจุบันก่อนคำนวณ');
+        return;
+      }
 
-      const currMap = {};
-      currAll.forEach(d => {
-        if (!currMap[d.name]) currMap[d.name] = { copy: 0, print: 0, color: 0, black: 0 };
-        currMap[d.name].copy += d.copy; currMap[d.name].print += d.print;
-        currMap[d.name].color += d.color; currMap[d.name].black += d.black;
-      });
+      const prevKey = getPreviousMonthKey();
+      const prevFromBackup = prevAll.length === 0 ? (counterHistory[prevKey] || []) : [];
+      const effectivePrevAll = prevAll.length > 0 ? prevAll : prevFromBackup;
 
-      const parsedPrev = Object.keys(prevMap).map(name => ({ name, ...prevMap[name], total: prevMap[name].copy + prevMap[name].print }));
-      const parsedCurr = Object.keys(currMap).map(name => ({ name, ...currMap[name], total: currMap[name].copy + currMap[name].print }));
+      if (prevAll.length === 0 && prevFromBackup.length > 0) {
+        showToast(`ใช้ข้อมูลเดือนก่อนหน้า ${prevKey} จากระบบอัตโนมัติ`);
+      } else if (prevAll.length === 0) {
+        showToast(`ยังไม่มี baseline เดือนก่อนหน้า ${prevKey} ระบบจะคิดเดือนก่อนเป็น 0`);
+      }
+
+      const prevMap = aggregateUsage(effectivePrevAll);
+      const currMap = aggregateUsage(currAll);
+
+      const parsedPrev = rowsFromUsageMap(prevMap);
+      const parsedCurr = rowsFromUsageMap(currMap);
       setRawPrevData(parsedPrev);
       setRawCurrData(parsedCurr);
 
@@ -202,8 +286,13 @@ export default function App() {
     } catch (err) { setError('เกิดข้อผิดพลาดในการอ่านไฟล์ กรุณาตรวจสอบรูปแบบไฟล์อีกครั้ง'); }
   };
 
+  const showToast = (message) => {
+    setToast(message);
+    window.setTimeout(() => setToast(''), 3000);
+  };
+
   const saveToHistory = () => {
-    if (tableData.length === 0) { alert('กรุณาอัพโหลดไฟล์และคำนวณข้อมูลก่อนบันทึก'); return; }
+    if (tableData.length === 0) { showToast('กรุณาอัพโหลดไฟล์และคำนวณข้อมูลก่อนบันทึก'); return; }
     const totals = tableData.reduce((acc, row) => ({
       copy: acc.copy + row.copy, print: acc.print + row.print,
       color: acc.color + row.color, black: acc.black + row.black, total: acc.total + row.total
@@ -225,25 +314,125 @@ export default function App() {
     
     setHistoryData(newHistory);
     localStorage.setItem('konica_history', JSON.stringify(newHistory));
-    alert('บันทึกประวัติสำเร็จ!');
+    if (rawCurrData.length > 0) {
+      const nextCounterHistory = { ...counterHistory, [monthStr]: rawCurrData };
+      setCounterHistory(nextCounterHistory);
+      localStorage.setItem('konica_counter_history', JSON.stringify(nextCounterHistory));
+    }
+    showToast('บันทึกประวัติสำเร็จ');
   };
 
   const clearHistory = () => {
-    if (window.confirm('คุณต้องการล้างประวัติกราฟทั้งหมดใช่หรือไม่?')) {
-      setHistoryData([]);
-      localStorage.removeItem('konica_history');
-    }
+    setHistoryData([]);
+    setCounterHistory({});
+    localStorage.removeItem('konica_history');
+    localStorage.removeItem('konica_counter_history');
+    setIsConfirmingClear(false);
+    showToast('ล้างประวัติกราฟแล้ว');
   };
 
   const exportExcel = () => {
     let tableStr = '<tr><th>Name</th><th>Department</th><th>Copy</th><th>Print</th><th>Color</th><th>Black</th><th>Total</th></tr>';
     sortedData.forEach(r => {
-      const dept = DEPARTMENT_MAP[r.name] || 'Others';
+      const dept = departmentMap[r.name] || 'Others';
       tableStr += `<tr><td>${r.name}</td><td>${dept}</td><td>${r.copy}</td><td>${r.print}</td><td>${r.color}</td><td>${r.black}</td><td>${r.total}</td></tr>`;
     });
     const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body><table>${tableStr}</table></body></html>`;
     const url = URL.createObjectURL(new Blob([html], { type: 'application/vnd.ms-excel' }));
     const a = document.createElement('a'); a.href = url; a.download = `konica_report_${activeTab}.xls`; a.click();
+  };
+
+  const exportHistoryBackup = () => {
+    const payload = {
+      app: 'konica-printer-summary',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      historyData,
+      counterHistory,
+      departmentMap,
+      hiddenUsers
+    };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `konica_history_backup_${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('ดาวน์โหลดไฟล์สำรองข้อมูลกราฟแล้ว');
+  };
+
+  const importHistoryBackup = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      const payload = JSON.parse(await file.text());
+      const nextHistory = Array.isArray(payload) ? payload : payload.historyData;
+      if (!Array.isArray(nextHistory)) throw new Error('Invalid backup file');
+
+      setHistoryData(nextHistory);
+      localStorage.setItem('konica_history', JSON.stringify(nextHistory));
+      if (payload.counterHistory && typeof payload.counterHistory === 'object') {
+        setCounterHistory(payload.counterHistory);
+        localStorage.setItem('konica_counter_history', JSON.stringify(payload.counterHistory));
+      }
+      if (payload.departmentMap && typeof payload.departmentMap === 'object') {
+        const nextDepartmentMap = { ...DEFAULT_DEPARTMENT_MAP, ...payload.departmentMap };
+        setDepartmentMap(nextDepartmentMap);
+        localStorage.setItem('konica_department_map', JSON.stringify(nextDepartmentMap));
+      }
+      if (Array.isArray(payload.hiddenUsers)) {
+        setHiddenUsers(payload.hiddenUsers);
+        localStorage.setItem('konica_hidden_users', JSON.stringify(payload.hiddenUsers));
+      }
+      showToast('นำเข้าข้อมูลกราฟสำเร็จ');
+    } catch (err) {
+      showToast('ไฟล์สำรองข้อมูลไม่ถูกต้อง');
+    } finally {
+      event.target.value = '';
+    }
+  };
+
+  const saveDepartmentMapping = () => {
+    const normalizedName = manageUserName.trim().toLowerCase();
+    const targetDept = customDept.trim() || manageDept;
+
+    if (!normalizedName || !targetDept) {
+      showToast('กรุณากรอกชื่อ user และแผนก');
+      return;
+    }
+
+    const nextDepartmentMap = { ...departmentMap, [normalizedName]: targetDept };
+    setDepartmentMap(nextDepartmentMap);
+    localStorage.setItem('konica_department_map', JSON.stringify(nextDepartmentMap));
+    setManageUserName('');
+    setCustomDept('');
+    showToast(`บันทึกแผนกของ ${normalizedName} แล้ว`);
+  };
+
+  const removeDepartmentMapping = (name) => {
+    const nextDepartmentMap = { ...departmentMap };
+    delete nextDepartmentMap[name];
+    setDepartmentMap(nextDepartmentMap);
+    localStorage.setItem('konica_department_map', JSON.stringify(nextDepartmentMap));
+    showToast(`ลบแผนกของ ${name} แล้ว`);
+  };
+
+  const resetDepartmentMapping = () => {
+    setDepartmentMap(DEFAULT_DEPARTMENT_MAP);
+    localStorage.setItem('konica_department_map', JSON.stringify(DEFAULT_DEPARTMENT_MAP));
+    showToast('รีเซ็ตแผนกกลับเป็นค่าเริ่มต้นแล้ว');
+  };
+
+  const setUserHidden = (name, shouldHide) => {
+    const normalizedName = name.trim().toLowerCase();
+    const nextHiddenUsers = shouldHide
+      ? Array.from(new Set([...hiddenUsers, normalizedName]))
+      : hiddenUsers.filter(userName => userName !== normalizedName);
+
+    setHiddenUsers(nextHiddenUsers);
+    localStorage.setItem('konica_hidden_users', JSON.stringify(nextHiddenUsers));
+    showToast(shouldHide ? `ซ่อน ${normalizedName} จากกราฟรายบุคคลแล้ว` : `แสดง ${normalizedName} ในกราฟรายบุคคลแล้ว`);
   };
 
   const handleSaveImage = async () => {
@@ -290,7 +479,7 @@ export default function App() {
       link.click();
     } catch (err) {
       console.error(err);
-      alert('เกิดข้อผิดพลาดในการเซฟรูปภาพ');
+      showToast('เกิดข้อผิดพลาดในการเซฟรูปภาพ');
     } finally {
       setIsSavingImg(false);
     }
@@ -327,6 +516,47 @@ export default function App() {
     return 'ข้อมูลที่อ่านได้ดิบ: เดือนก่อนหน้า';
   };
 
+  const getSortDirection = (key) => sortConfig.key === key ? sortConfig.direction : undefined;
+  const sortIcon = (key) => sortConfig.key === key ? (sortConfig.direction === 'asc' ? '▲' : '▼') : '';
+  const formatDelta = (value, percent) => `${value >= 0 ? '+' : '-'}${Math.abs(value).toLocaleString()} (${value >= 0 ? '+' : '-'}${Math.abs(percent).toFixed(2)}%)`;
+  const getStackTotal = (row) => row.copy + row.print + row.color + row.black;
+
+  const SortableHeader = ({ sortKey, children, align = 'left', highlight = false }) => {
+    const direction = getSortDirection(sortKey);
+    return (
+      <th
+        scope="col"
+        aria-sort={direction ? (direction === 'asc' ? 'ascending' : 'descending') : 'none'}
+        className={`p-0 ${highlight ? 'bg-blue-50 text-blue-700' : ''}`}
+      >
+        <button
+          type="button"
+          onClick={() => handleSort(sortKey)}
+          className={`flex w-full items-center gap-1 p-3 font-semibold hover:bg-gray-200 ${align === 'right' ? 'justify-end text-right' : 'justify-start text-left'}`}
+        >
+          <span>{children}</span>
+          <span aria-hidden="true" className="text-xs">{sortIcon(sortKey)}</span>
+        </button>
+      </th>
+    );
+  };
+
+  const departmentOptions = useMemo(() => {
+    const values = new Set(DEPARTMENTS);
+    Object.values(departmentMap).forEach(dept => values.add(dept));
+    return Array.from(values);
+  }, [departmentMap]);
+
+  const managedUsers = useMemo(() => {
+    const names = new Set(Object.keys(departmentMap));
+    historyData.forEach(item => item.users?.forEach(user => names.add(user.name)));
+    tableData.forEach(user => names.add(user.name));
+    rawPrevData.forEach(user => names.add(user.name));
+    rawCurrData.forEach(user => names.add(user.name));
+    hiddenUsers.forEach(name => names.add(name));
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }, [departmentMap, historyData, tableData, rawPrevData, rawCurrData, hiddenUsers]);
+
   // -------------------------------------------------------------
   // กราฟภาพรวม (Overall Chart)
   // -------------------------------------------------------------
@@ -345,11 +575,11 @@ export default function App() {
   const allUsersInDeptMap = {};
   individualHistory.forEach(h => {
     h.users.forEach(u => {
-      if (HIDE_USERS.includes(u.name)) return; // 🛑 ซ่อนคนที่ถูกกำหนดไม่ให้โชว์
+      if (hiddenUsers.includes(u.name)) return;
 
-      const dept = DEPARTMENT_MAP[u.name] || 'Others';
+      const dept = departmentMap[u.name] || 'Others';
       if (selectedDept === 'All' || selectedDept === dept) {
-        allUsersInDeptMap[u.name] = (allUsersInDeptMap[u.name] || 0) + u.total;
+        allUsersInDeptMap[u.name] = (allUsersInDeptMap[u.name] || 0) + getStackTotal(u);
       }
     });
   });
@@ -361,7 +591,8 @@ export default function App() {
   individualHistory.forEach(h => {
     h.users.forEach(u => {
       if (displayUsers.includes(u.name)) {
-        if (u.total > maxIndvVal) maxIndvVal = u.total;
+        const stackTotal = getStackTotal(u);
+        if (stackTotal > maxIndvVal) maxIndvVal = stackTotal;
       }
     });
   });
@@ -383,68 +614,259 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-8 font-sans text-gray-800">
       <div className="max-w-[1300px] mx-auto space-y-6">
+        <header className="flex flex-col gap-2">
+          <h1 className="text-2xl font-bold text-gray-900">รายงานการใช้เครื่อง KONICA</h1>
+          <p className="text-sm text-gray-500">อัปโหลดไฟล์เดือนก่อนหน้าและเดือนปัจจุบัน จากนั้นคำนวณเพื่อดูสรุปและบันทึกลงกราฟ</p>
+        </header>
+
+        {toast && (
+          <div role="status" className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700 shadow-sm">
+            {toast}
+          </div>
+        )}
+
+        {error && <div role="alert" className="bg-red-50 text-red-600 p-4 rounded-lg flex items-center gap-2"><AlertCircle size={20} />{error}</div>}
+
+        <section aria-labelledby="upload-heading" className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="p-5 border-b border-gray-100 bg-gray-50">
+            <h2 id="upload-heading" className="text-lg font-bold text-gray-800 flex items-center gap-2">
+              <Upload className="text-blue-500" size={22} /> 1. อัปโหลดไฟล์สำหรับคำนวณ
+            </h2>
+            <p className="mt-2 text-sm text-gray-500">
+              เดือนนี้: <span className="font-semibold text-gray-700">{getMonthKey()}</span> | baseline อัตโนมัติเดือนก่อนหน้า: <span className="font-semibold text-gray-700">{getPreviousMonthKey()}</span>
+              {counterHistory[getPreviousMonthKey()] ? ' พร้อมใช้งาน' : ' ยังไม่มีข้อมูลสำรอง'}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-5">
+            <div className="rounded-lg border border-gray-200 p-4">
+              <h3 className="font-semibold text-gray-700 mb-4">ไฟล์เดือน "ก่อนหน้า"</h3>
+              <div className="space-y-3">
+                {[1, 2, 3].map((num, i) => (
+                  <div key={`prev-${i}`} className="flex flex-col sm:flex-row sm:items-center gap-2">
+                    <label htmlFor={`prev-file-${i}`} className="text-sm font-medium text-gray-500 sm:w-16">เครื่อง {num}</label>
+                    {!prevFiles[i] ? (
+                      <input id={`prev-file-${i}`} type="file" accept=".csv, .txt" className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-gray-50 file:text-gray-700 hover:file:bg-gray-100 cursor-pointer" onChange={(e) => handleFileChange(i, 'prev', e.target.files[0])} />
+                    ) : (
+                      <div className="flex-1 flex items-center justify-between bg-green-50 text-green-700 px-3 py-2 rounded text-sm border border-green-100 shadow-sm"><span className="truncate max-w-[240px]">{prevFiles[i].name}</span><button aria-label={`ลบไฟล์เดือนก่อนหน้า เครื่อง ${num}`} onClick={() => removeFile(i, 'prev')} className="text-red-500 hover:text-red-700 bg-red-50 p-1 rounded"><Trash2 size={16} /></button></div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-blue-200 p-4">
+              <h3 className="font-semibold text-blue-700 mb-4">ไฟล์เดือน "ปัจจุบัน"</h3>
+              <div className="space-y-3">
+                {[1, 2, 3].map((num, i) => (
+                  <div key={`curr-${i}`} className="flex flex-col sm:flex-row sm:items-center gap-2">
+                    <label htmlFor={`curr-file-${i}`} className="text-sm font-medium text-blue-500 sm:w-16">เครื่อง {num}</label>
+                    {!currFiles[i] ? (
+                      <input id={`curr-file-${i}`} type="file" accept=".csv, .txt" className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer" onChange={(e) => handleFileChange(i, 'curr', e.target.files[0])} />
+                    ) : (
+                      <div className="flex-1 flex items-center justify-between bg-green-50 text-green-700 px-3 py-2 rounded text-sm border border-green-100 shadow-sm"><span className="truncate max-w-[240px]">{currFiles[i].name}</span><button aria-label={`ลบไฟล์เดือนปัจจุบัน เครื่อง ${num}`} onClick={() => removeFile(i, 'curr')} className="text-red-500 hover:text-red-700 bg-red-50 p-1 rounded"><Trash2 size={16} /></button></div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-center border-t border-gray-100 bg-gray-50 p-5">
+            <button onClick={calculateData} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-10 rounded-lg shadow transition-transform active:scale-95 text-base flex items-center gap-2">
+              <Calculator size={20} /> คำนวณยอดการใช้งาน
+            </button>
+          </div>
+        </section>
+
+        <section aria-labelledby="department-heading" className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="p-5 border-b border-gray-100 bg-gray-50">
+            <h2 id="department-heading" className="text-lg font-bold text-gray-800 flex items-center gap-2">
+              <Users className="text-blue-500" size={22} /> 2. จัดการรายชื่อและแผนก
+            </h2>
+            <p className="mt-2 text-sm text-gray-500">เพิ่มหรือแก้แผนกของ user ได้ที่นี่ และซ่อนพนักงานลาออกจากกราฟรายบุคคลได้ โดยยอดยังนับในกราฟภาพรวม</p>
+          </div>
+
+          <div className="grid grid-cols-1 xl:grid-cols-[1fr_1.4fr] gap-5 p-5">
+            <div className="rounded-lg border border-gray-200 p-4 space-y-3">
+              <div>
+                <label htmlFor="manage-user-name" className="block text-xs font-semibold text-gray-500 mb-1">User name</label>
+                <input
+                  id="manage-user-name"
+                  type="text"
+                  value={manageUserName}
+                  onChange={(e) => setManageUserName(e.target.value)}
+                  placeholder="เช่น worakeat"
+                  className="w-full rounded border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-200"
+                />
+              </div>
+              <div>
+                <label htmlFor="manage-dept" className="block text-xs font-semibold text-gray-500 mb-1">เลือกแผนก</label>
+                <select
+                  id="manage-dept"
+                  value={manageDept}
+                  onChange={(e) => setManageDept(e.target.value)}
+                  className="w-full rounded border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-200"
+                >
+                  {departmentOptions.filter(dept => dept !== 'All').map(dept => <option key={dept} value={dept}>{dept}</option>)}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="custom-dept" className="block text-xs font-semibold text-gray-500 mb-1">หรือเพิ่มแผนกใหม่</label>
+                <input
+                  id="custom-dept"
+                  type="text"
+                  value={customDept}
+                  onChange={(e) => setCustomDept(e.target.value)}
+                  placeholder="ถ้าไม่ใส่ จะใช้แผนกที่เลือกด้านบน"
+                  className="w-full rounded border border-gray-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-200"
+                />
+              </div>
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button onClick={saveDepartmentMapping} className="rounded bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700">บันทึกแผนก</button>
+                <button onClick={resetDepartmentMapping} className="rounded border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">รีเซ็ตค่าเริ่มต้น</button>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-gray-200 overflow-hidden">
+              <div className="max-h-[270px] overflow-y-auto custom-scrollbar">
+                <table className="w-full text-left text-sm">
+                  <thead className="sticky top-0 bg-gray-100 text-gray-600">
+                    <tr>
+                      <th className="p-3 font-semibold">User</th>
+                      <th className="p-3 font-semibold">แผนก</th>
+                      <th className="p-3 font-semibold">สถานะกราฟรายบุคคล</th>
+                      <th className="p-3 text-right font-semibold">จัดการ</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {managedUsers.map((name) => {
+                      const dept = departmentMap[name] || 'Others';
+                      const isHidden = hiddenUsers.includes(name);
+
+                      return (
+                        <tr key={name} className="hover:bg-gray-50">
+                          <td className="p-3 font-medium text-gray-800">{name}</td>
+                          <td className="p-3 text-gray-600">{dept}</td>
+                          <td className="p-3">
+                            <span className={`rounded-full px-2 py-1 text-xs font-semibold ${isHidden ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-700'}`}>
+                              {isHidden ? 'ซ่อนจากกราฟรายบุคคล' : 'แสดงในกราฟรายบุคคล'}
+                            </span>
+                          </td>
+                          <td className="p-3 text-right whitespace-nowrap">
+                            <button onClick={() => { setManageUserName(name); setManageDept(dept); setCustomDept(''); }} className="mr-2 text-blue-600 hover:text-blue-700 font-medium">แก้ไข</button>
+                            <button onClick={() => setUserHidden(name, !isHidden)} className={`mr-2 font-medium ${isHidden ? 'text-green-600 hover:text-green-700' : 'text-amber-600 hover:text-amber-700'}`}>
+                              {isHidden ? 'แสดง' : 'ซ่อน'}
+                            </button>
+                            <button onClick={() => removeDepartmentMapping(name)} className="text-red-600 hover:text-red-700 font-medium">ลบแผนก</button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
         
         {/* --- GRAPH SECTION --- */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden relative">
+        <section aria-labelledby="chart-heading" className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden relative">
           
-          <div className="p-4 px-6 border-b border-gray-100 flex flex-col xl:flex-row justify-between items-center gap-4">
-            <div className="flex flex-col gap-3">
+          <div className="p-5 px-6 border-b border-gray-100 flex flex-col gap-5">
+            <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4">
               <div className="flex items-start gap-3">
                 <BarChart3 className="text-blue-500 mt-1" size={24} />
                 <div>
-                  <h2 className="text-lg font-bold text-gray-800">รายงานการใช้เครื่อง KONICA (สำเนา, ปริ้น)</h2>
+                  <h2 id="chart-heading" className="text-lg font-bold text-gray-800">3. กราฟประวัติการใช้งาน</h2>
                   <p className="text-sm text-gray-500">ประวัติการใช้งานจะถูกเซฟเก็บไว้ในเบราว์เซอร์ของคุณ</p>
                 </div>
               </div>
-              
-              <div className="flex gap-2">
+
+              <div className="flex flex-wrap gap-2" role="group" aria-label="เลือกมุมมองกราฟ">
                 <button 
                   onClick={() => setChartView('overall')}
+                  aria-pressed={chartView === 'overall'}
                   className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors flex items-center gap-2 ${chartView === 'overall' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
                 >
                   <PieChart size={16} /> ภาพรวมทั้งหมด
                 </button>
                 <button 
                   onClick={() => setChartView('individual')}
+                  aria-pressed={chartView === 'individual'}
                   className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors flex items-center gap-2 ${chartView === 'individual' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
                 >
                   <Users size={16} /> รายบุคคล (แยกแผนก)
                 </button>
               </div>
             </div>
-            
-            <div className="flex flex-wrap justify-center items-center gap-2 bg-gray-50 p-2 px-4 rounded-lg border border-gray-200" data-html2canvas-ignore>
-              <span className="text-sm text-gray-600 font-medium">บันทึกยอดเดือนนี้:</span>
-              <select className="border border-gray-300 rounded px-2 py-1.5 text-sm bg-white outline-none" value={selMonthIdx} onChange={e => setSelMonthIdx(e.target.value)}>
-                {TH_MONTHS.map((m, i) => <option key={i} value={i}>{m}</option>)}
-              </select>
-              <select className="border border-gray-300 rounded px-2 py-1.5 text-sm bg-white outline-none" value={selYear} onChange={e => setSelYear(e.target.value)}>
-                {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
-              </select>
-              <button onClick={saveToHistory} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded flex items-center gap-1 text-sm font-medium transition-colors ml-1">
-                <Save size={16} /> บันทึก
-              </button>
-              <div className="w-px h-6 bg-gray-300 mx-1"></div>
-              <button onClick={handleSaveImage} disabled={isSavingImg} className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded flex items-center gap-1 text-sm font-medium transition-colors">
-                <ImageIcon size={16} /> {isSavingImg ? 'กำลังโหลด...' : 'เซฟเป็นภาพ'}
-              </button>
-              <button onClick={clearHistory} className="text-red-500 hover:text-red-700 text-sm font-medium ml-2">
-                ล้างกราฟ
-              </button>
+
+            <div className="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-4 rounded-lg border border-gray-200 bg-gray-50 p-4" data-html2canvas-ignore>
+              <div className="flex flex-wrap items-end gap-3">
+                <div>
+                  <label htmlFor="history-month" className="block text-xs font-semibold text-gray-500 mb-1">เดือนที่บันทึก</label>
+                  <select id="history-month" className="border border-gray-300 rounded px-2 py-1.5 text-sm bg-white outline-none focus:ring-2 focus:ring-blue-200" value={selMonthIdx} onChange={e => setSelMonthIdx(e.target.value)}>
+                    {TH_MONTHS.map((m, i) => <option key={i} value={i}>{m}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="history-year" className="block text-xs font-semibold text-gray-500 mb-1">ปี</label>
+                  <select id="history-year" className="border border-gray-300 rounded px-2 py-1.5 text-sm bg-white outline-none focus:ring-2 focus:ring-blue-200" value={selYear} onChange={e => setSelYear(e.target.value)}>
+                    {YEARS.map(y => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                </div>
+                {chartView === 'individual' && (
+                  <div>
+                    <label htmlFor="department-filter" className="block text-xs font-semibold text-gray-500 mb-1">แผนก</label>
+                    <select id="department-filter" className="min-w-[190px] border border-gray-300 rounded px-2 py-1.5 text-sm bg-white outline-none focus:ring-2 focus:ring-blue-200" value={selectedDept} onChange={e => setSelectedDept(e.target.value)}>
+                      {departmentOptions.map(dept => <option key={dept} value={dept}>{dept === 'All' ? 'ทุกแผนก' : dept}</option>)}
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button onClick={saveToHistory} className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded flex items-center gap-1 text-sm font-medium transition-colors">
+                  <Save size={16} /> บันทึกลงกราฟ
+                </button>
+                <button onClick={handleSaveImage} disabled={isSavingImg} className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white px-3 py-1.5 rounded flex items-center gap-1 text-sm font-medium transition-colors">
+                  <ImageIcon size={16} /> {isSavingImg ? 'กำลังโหลด...' : 'เซฟเป็นภาพ'}
+                </button>
+                <button onClick={exportHistoryBackup} className="bg-slate-700 hover:bg-slate-800 text-white px-3 py-1.5 rounded flex items-center gap-1 text-sm font-medium transition-colors">
+                  <FileDown size={16} /> สำรองข้อมูล
+                </button>
+                <label className="cursor-pointer bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 px-3 py-1.5 rounded flex items-center gap-1 text-sm font-medium transition-colors">
+                  <Upload size={16} /> นำเข้า Backup
+                  <input type="file" accept="application/json,.json" className="sr-only" onChange={importHistoryBackup} />
+                </label>
+                <button onClick={() => setIsConfirmingClear(true)} className="text-red-600 hover:text-red-700 border border-red-200 bg-white px-3 py-1.5 rounded text-sm font-medium">
+                  ล้างกราฟ
+                </button>
+              </div>
             </div>
+
+            {isConfirmingClear && (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-4" role="alertdialog" aria-labelledby="clear-history-title" aria-describedby="clear-history-description">
+                <p id="clear-history-title" className="font-semibold text-red-700">ยืนยันล้างประวัติกราฟ</p>
+                <p id="clear-history-description" className="mt-1 text-sm text-red-600">ข้อมูลประวัติที่บันทึกไว้ในเบราว์เซอร์จะถูกลบทั้งหมด</p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button onClick={clearHistory} className="rounded bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-700">ยืนยันล้างข้อมูล</button>
+                  <button onClick={() => setIsConfirmingClear(false)} className="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50">ยกเลิก</button>
+                </div>
+              </div>
+            )}
           </div>
 
           <div id="chart-container" className="bg-white">
             
             {/* --- ภาพรวม --- */}
             {chartView === 'overall' && (
-              <div className="p-6 overflow-x-auto custom-scrollbar pb-20"> {/* 👈 เพิ่ม Bottom padding สำหรับ Scroll */}
+              <div className="p-6 pt-14 overflow-x-auto overflow-y-visible custom-scrollbar pb-4">
                 <h3 className="text-center font-bold text-gray-700 mb-6 text-lg" data-html2canvas-show>
                   กราฟภาพรวมการใช้งานทุกเครื่อง (ยอดรวมทั้งหมด)
                 </h3>
                 
-                {/* 👈 ซิงค์ความสูง h-[400px] เป๊ะๆ เพื่อไม่ให้เส้นกริดคลาดเคลื่อน */}
-                <div className="min-w-[800px] flex relative mt-4 mb-20">
+                <div className="min-w-[800px] flex relative mt-4 mb-8">
                   <div className="w-16 flex flex-col justify-between items-end pr-3 text-[11px] font-semibold text-gray-500 bg-white sticky left-0 z-20 h-[400px]">
                     {yTicks.map(tick => <span key={`l-${tick}`}>{tick.toLocaleString()}</span>)}
                   </div>
@@ -470,38 +892,48 @@ export default function App() {
                         const hTotalLine = (d.total / yMaxLine) * 100;
                         const diff = i > 0 ? d.total - historyData[i-1].total : 0;
                         const diffPercent = i > 0 && historyData[i-1].total > 0 ? (diff / historyData[i-1].total) * 100 : 0;
+                        const tooltip = `${d.month} | รวม ${d.total.toLocaleString()} แผ่น | Copy ${d.copy.toLocaleString()} | Print ${d.print.toLocaleString()} | Color ${d.color.toLocaleString()} | Black ${d.black.toLocaleString()}${i > 0 ? ` | เปลี่ยนแปลง ${formatDelta(diff, diffPercent)}` : ''}`;
                         
                         return (
-                          <div key={i} className="flex-1 flex flex-col items-center justify-end h-full relative group">
+                          <div key={i} className="flex-1 flex flex-col items-center justify-end h-full relative group" title={tooltip}>
                             <div className="w-full max-w-[120px] flex items-end justify-center gap-1.5 h-full z-0 px-2">
-                              <div className="flex-1 rounded-t-sm relative flex justify-center" style={{ backgroundColor: COLORS.copy, height: `${(d.copy/yMax)*100}%`, minHeight: d.copy > 0?'2px':'0' }}>
+                              <div aria-label={`${d.month} Copy ${d.copy.toLocaleString()} แผ่น`} className="flex-1 rounded-t-sm relative flex justify-center hover:brightness-95" style={{ backgroundColor: COLORS.copy, height: `${(d.copy/yMax)*100}%`, minHeight: d.copy > 0?'2px':'0' }}>
                                 {d.copy > 0 && <span className="absolute -top-10 text-[11px] font-bold text-gray-700 -rotate-90 whitespace-nowrap">{d.copy.toLocaleString()}</span>}
                               </div>
-                              <div className="flex-1 rounded-t-sm relative flex justify-center" style={{ backgroundColor: COLORS.print, height: `${(d.print/yMax)*100}%`, minHeight: d.print > 0?'2px':'0' }}>
+                              <div aria-label={`${d.month} Print ${d.print.toLocaleString()} แผ่น`} className="flex-1 rounded-t-sm relative flex justify-center hover:brightness-95" style={{ backgroundColor: COLORS.print, height: `${(d.print/yMax)*100}%`, minHeight: d.print > 0?'2px':'0' }}>
                                 {d.print > 0 && <span className="absolute -top-12 text-[11px] font-bold text-gray-700 -rotate-90 whitespace-nowrap">{d.print.toLocaleString()}</span>}
                               </div>
-                              <div className="flex-1 rounded-t-sm relative flex justify-center" style={{ backgroundColor: COLORS.color, height: `${(d.color/yMax)*100}%`, minHeight: d.color > 0?'2px':'0' }}>
+                              <div aria-label={`${d.month} Color ${d.color.toLocaleString()} แผ่น`} className="flex-1 rounded-t-sm relative flex justify-center hover:brightness-95" style={{ backgroundColor: COLORS.color, height: `${(d.color/yMax)*100}%`, minHeight: d.color > 0?'2px':'0' }}>
                                 {d.color > 0 && <span className="absolute -top-10 text-[11px] font-bold text-gray-700 -rotate-90 whitespace-nowrap">{d.color.toLocaleString()}</span>}
                               </div>
-                              <div className="flex-1 rounded-t-sm relative flex justify-center" style={{ backgroundColor: COLORS.black, height: `${(d.black/yMax)*100}%`, minHeight: d.black > 0?'2px':'0' }}>
+                              <div aria-label={`${d.month} Black ${d.black.toLocaleString()} แผ่น`} className="flex-1 rounded-t-sm relative flex justify-center hover:brightness-95" style={{ backgroundColor: COLORS.black, height: `${(d.black/yMax)*100}%`, minHeight: d.black > 0?'2px':'0' }}>
                                 {d.black > 0 && <span className="absolute -top-12 text-[11px] font-bold text-gray-700 -rotate-90 whitespace-nowrap">{d.black.toLocaleString()}</span>}
                               </div>
                             </div>
 
-                            <div className="absolute w-full flex flex-col items-center" style={{ bottom: `${hTotalLine}%`, zIndex: 20 }}>
-                              <div className="bg-[#f59e0b] text-white text-xs font-bold px-2.5 py-1 rounded shadow-md relative -top-6 whitespace-nowrap border border-white">
-                                {d.total.toLocaleString()}
-                              </div>
-                              {i > 0 && (
-                                <div className={`text-[10px] font-bold px-1.5 py-0.5 rounded border mt-[-20px] bg-white whitespace-nowrap shadow-sm ${diff >= 0 ? 'text-[#059669] border-emerald-200' : 'text-[#dc2626] border-red-200'}`}>
-                                  {diff >= 0 ? '▲ +' : '▼ '}{Math.abs(diffPercent).toFixed(2)} %
+                            <div className="absolute w-full flex justify-center pointer-events-none" style={{ bottom: `${hTotalLine}%`, zIndex: 20 }}>
+                              <div className="relative flex flex-col items-center">
+                                <div className="absolute bottom-4 bg-[#f59e0b] text-white text-xs font-bold px-2.5 py-1 rounded shadow-md whitespace-nowrap border border-white">
+                                  {d.total.toLocaleString()}
                                 </div>
-                              )}
-                              <div className="w-3.5 h-3.5 bg-white border-2 border-[#f59e0b] rounded-full absolute -bottom-1.5 shadow-sm"></div>
+                                <div className="w-3.5 h-3.5 bg-white border-2 border-[#f59e0b] rounded-full shadow-sm"></div>
+                                {i > 0 && (
+                                  <div className={`absolute top-4 text-[10px] font-bold px-1.5 py-0.5 rounded border bg-white/85 whitespace-nowrap shadow-sm ${diff >= 0 ? 'text-[#059669] border-emerald-200' : 'text-[#dc2626] border-red-200'}`}>
+                                    {diff >= 0 ? '▲ +' : '▼ '}{Math.abs(diffPercent).toFixed(2)} %
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="pointer-events-none absolute left-1/2 top-3 z-30 w-56 -translate-x-1/2 rounded-lg border border-gray-200 bg-white p-3 text-left text-xs text-gray-600 opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                              <p className="font-bold text-gray-800">{d.month}</p>
+                              <p className="mt-1">รวม {d.total.toLocaleString()} แผ่น</p>
+                              <p>Copy {d.copy.toLocaleString()} | Print {d.print.toLocaleString()}</p>
+                              <p>Color {d.color.toLocaleString()} | Black {d.black.toLocaleString()}</p>
+                              {i > 0 && <p className={diff >= 0 ? 'text-emerald-600' : 'text-red-600'}>เปลี่ยนแปลง {formatDelta(diff, diffPercent)}</p>}
                             </div>
                             
-                            {/* 👈 ระยะห่างเดือนให้อยู่ในระยะพอดี ไม่ตัดขาด */}
-                            <div className="absolute -bottom-8 text-sm font-bold text-gray-800 w-full text-center">{d.month}</div>
+                            <div className="absolute -bottom-6 text-sm font-bold text-gray-800 w-full text-center">{d.month}</div>
                           </div>
                         )
                       })}
@@ -517,25 +949,12 @@ export default function App() {
 
             {/* --- รายบุคคลแบบ Stack รวม --- */}
             {chartView === 'individual' && (
-              <div className="p-6 pb-2">
+              <div className="p-6 pb-0">
                 
                 <div className="flex flex-col items-center mb-6" data-html2canvas-show>
                   <h3 className="font-bold text-gray-700 text-lg mb-4">
                     รายงานการใช้เครื่อง KONICA แบบรายบุคคล | {selectedDept !== 'All' ? `แผนก ${selectedDept}` : 'ทุกแผนก'} | ประจำปี {selYear}
                   </h3>
-                  
-                  {/* แท็บเลือกแผนก */}
-                  <div className="flex flex-wrap justify-center gap-2 max-w-4xl" data-html2canvas-ignore>
-                    {DEPARTMENTS.map(dept => (
-                      <button
-                        key={dept}
-                        onClick={() => setSelectedDept(dept)}
-                        className={`px-3 py-1.5 text-xs font-semibold rounded-full border transition-colors ${selectedDept === dept ? 'bg-indigo-600 text-white border-indigo-700' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-100'}`}
-                      >
-                        {dept}
-                      </button>
-                    ))}
-                  </div>
                 </div>
 
                 {displayUsers.length === 0 ? (
@@ -543,8 +962,8 @@ export default function App() {
                     ไม่พบข้อมูลพนักงานในแผนกนี้ หรือคุณยังไม่ได้บันทึกข้อมูลลงกราฟ
                   </div>
                 ) : (
-                  <div className="overflow-x-auto custom-scrollbar pb-14"> {/* 👈 เพิ่มพื้นที่ให้เลื่อนได้โดยตัวหนังสือไม่หาย */}
-                    <div className="flex relative mt-4 mb-24" style={{ minWidth: `${indvChartWidth}px` }}> {/* 👈 เพิ่ม mb-24 ให้ฐานชื่อคนไม่หลุดขอบ */}
+                  <div className="overflow-x-auto overflow-y-visible custom-scrollbar pb-4">
+                    <div className="flex relative mt-4 mb-16" style={{ minWidth: `${indvChartWidth}px` }}>
                       
                       <div className="w-14 flex flex-col justify-between items-end pr-3 text-[11px] font-semibold text-gray-500 bg-white sticky left-0 z-20 shadow-[2px_0_5px_rgba(0,0,0,0.05)] border-r border-gray-200 h-[400px]">
                         {yTicksIndv.map(tick => <span key={`li-${tick}`}>{tick.toLocaleString()}</span>)}
@@ -565,55 +984,56 @@ export default function App() {
                                 <div className="w-full h-full flex items-end justify-center gap-1.5 px-3">
                                   {individualHistory.map((h, mIdx) => {
                                     const uData = h.users.find(u => u.name === userName) || {total:0, copy:0, print:0, color:0, black:0};
+                                    const stackTotal = getStackTotal(uData);
                                     
-                                    const hTotal = yMaxIndv > 0 ? (uData.total / yMaxIndv) * 100 : 0;
-                                    const hCopy = uData.total > 0 ? (uData.copy / uData.total) * 100 : 0;
-                                    const hPrint = uData.total > 0 ? (uData.print / uData.total) * 100 : 0;
-                                    const hColor = uData.total > 0 ? (uData.color / uData.total) * 100 : 0;
-                                    const hBlack = uData.total > 0 ? (uData.black / uData.total) * 100 : 0;
-
-                                    // 👈 คำนวณความสูงจริงเทียบกับกราฟทั้งหมด เพื่อซ่อนตัวเลขเวลากราฟเตี้ยเกินไป (เตี้ยกว่า 14px)
-                                    const copyHeightPx = (uData.copy / yMaxIndv) * 400; 
-                                    const printHeightPx = (uData.print / yMaxIndv) * 400;
-                                    const colorHeightPx = (uData.color / yMaxIndv) * 400;
-                                    const blackHeightPx = (uData.black / yMaxIndv) * 400;
+                                    const hTotal = yMaxIndv > 0 ? (stackTotal / yMaxIndv) * 100 : 0;
+                                    const hCopy = stackTotal > 0 ? (uData.copy / stackTotal) * 100 : 0;
+                                    const hPrint = stackTotal > 0 ? (uData.print / stackTotal) * 100 : 0;
+                                    const hColor = stackTotal > 0 ? (uData.color / stackTotal) * 100 : 0;
+                                    const hBlack = stackTotal > 0 ? (uData.black / stackTotal) * 100 : 0;
+                                    const tooltip = `${userName} | ${h.month} | รวมบนกราฟ ${stackTotal.toLocaleString()} แผ่น | Copy ${uData.copy.toLocaleString()} | Print ${uData.print.toLocaleString()} | Color ${uData.color.toLocaleString()} | Black ${uData.black.toLocaleString()}`;
 
                                     return (
-                                      <div key={mIdx} className="flex-1 flex flex-col justify-end items-center h-full relative group min-w-[25px] max-w-[40px]">
+                                      <div key={mIdx} className="flex-1 flex flex-col justify-end items-center h-full relative group min-w-[25px] max-w-[40px]" title={tooltip}>
                                         
-                                        {uData.total > 0 && (
+                                        {stackTotal > 0 && (
                                           <div className="w-full flex flex-col justify-end items-center relative z-10 hover:opacity-90 transition-opacity" style={{ height: `${hTotal}%` }}>
                                             
                                             {/* Stack: Black, Color, Print, Copy (ล่างสุด) */}
                                             {uData.black > 0 && (
-                                              <div className="w-full relative flex flex-col items-center justify-center border-b border-white/20" style={{ height: `${hBlack}%`, backgroundColor: COLORS.black }}>
-                                                {blackHeightPx > 14 && <span className="text-[9px] font-bold text-white px-1 leading-none">{uData.black}</span>}
+                                              <div aria-label={`${userName} ${h.month} Black ${uData.black.toLocaleString()} แผ่น`} className="w-full relative flex flex-col items-center justify-center border-b border-white/20" style={{ height: `${hBlack}%`, backgroundColor: COLORS.black }}>
+                                                <span className="text-[9px] font-bold text-white px-1 leading-none">{uData.black.toLocaleString()}</span>
                                               </div>
                                             )}
                                             {uData.color > 0 && (
-                                              <div className="w-full relative flex flex-col items-center justify-center border-b border-white/20" style={{ height: `${hColor}%`, backgroundColor: COLORS.color }}>
-                                                {colorHeightPx > 14 && <span className="text-[9px] font-bold text-white px-1 leading-none">{uData.color}</span>}
+                                              <div aria-label={`${userName} ${h.month} Color ${uData.color.toLocaleString()} แผ่น`} className="w-full relative flex flex-col items-center justify-center border-b border-white/20" style={{ height: `${hColor}%`, backgroundColor: COLORS.color }}>
+                                                <span className="text-[9px] font-bold text-white px-1 leading-none">{uData.color.toLocaleString()}</span>
                                               </div>
                                             )}
                                             {uData.print > 0 && (
-                                              <div className="w-full relative flex flex-col items-center justify-center border-b border-white/20" style={{ height: `${hPrint}%`, backgroundColor: COLORS.print }}>
-                                                {printHeightPx > 14 && <span className="text-[9px] font-bold text-gray-800 px-1 leading-none">{uData.print}</span>}
+                                              <div aria-label={`${userName} ${h.month} Print ${uData.print.toLocaleString()} แผ่น`} className="w-full relative flex flex-col items-center justify-center border-b border-white/20" style={{ height: `${hPrint}%`, backgroundColor: COLORS.print }}>
+                                                <span className="text-[9px] font-bold text-gray-800 px-1 leading-none">{uData.print.toLocaleString()}</span>
                                               </div>
                                             )}
                                             {uData.copy > 0 && (
-                                              <div className="w-full relative flex flex-col items-center justify-center" style={{ height: `${hCopy}%`, backgroundColor: COLORS.copy }}>
-                                                {copyHeightPx > 14 && <span className="text-[9px] font-bold text-gray-800 px-1 leading-none">{uData.copy}</span>}
+                                              <div aria-label={`${userName} ${h.month} Copy ${uData.copy.toLocaleString()} แผ่น`} className="w-full relative flex flex-col items-center justify-center" style={{ height: `${hCopy}%`, backgroundColor: COLORS.copy }}>
+                                                <span className="text-[9px] font-bold text-gray-800 px-1 leading-none">{uData.copy.toLocaleString()}</span>
                                               </div>
                                             )}
+                                            <div className="absolute -top-5 text-[10px] font-bold text-gray-700 bg-white/90 px-1 rounded shadow-sm whitespace-nowrap pointer-events-none">
+                                              {stackTotal.toLocaleString()}
+                                            </div>
                                             
-                                            <div className="absolute -top-5 text-[10px] font-bold text-gray-700 bg-white/90 px-1 rounded shadow-sm opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
-                                              รวม: {uData.total.toLocaleString()}
+                                            <div className="pointer-events-none absolute -top-24 left-1/2 z-30 w-52 -translate-x-1/2 rounded-lg border border-gray-200 bg-white p-3 text-left text-xs text-gray-600 opacity-0 shadow-lg transition-opacity group-hover:opacity-100">
+                                              <p className="font-bold text-gray-800">{userName}</p>
+                                              <p>{h.month} | รวมบนกราฟ {stackTotal.toLocaleString()} แผ่น</p>
+                                              <p>Copy {uData.copy.toLocaleString()} | Print {uData.print.toLocaleString()}</p>
+                                              <p>Color {uData.color.toLocaleString()} | Black {uData.black.toLocaleString()}</p>
                                             </div>
                                           </div>
                                         )}
 
-                                        {/* 👈 ลบ truncate ทิ้ง เพื่อไม่ให้ชื่อเดือนหายไป */}
-                                        <div className="absolute -bottom-6 text-[10px] font-semibold text-gray-500 w-full text-center">
+                                        <div className="absolute -bottom-5 text-[10px] font-semibold text-gray-500 w-full text-center">
                                           {getShortThMonth(h.month)}
                                         </div>
                                       </div>
@@ -621,8 +1041,7 @@ export default function App() {
                                   })}
                                 </div>
 
-                                {/* 👈 ลบ truncate ออกเช่นกัน และปรับตำแหน่งให้ชัดเจนขึ้น */}
-                                <div className="absolute -bottom-14 text-sm font-bold text-gray-700 w-full text-center pt-2 px-2">
+                                <div className="absolute -bottom-12 text-sm font-bold text-gray-700 w-full text-center pt-1 px-2">
                                   {userName}
                                 </div>
                               </div>
@@ -636,7 +1055,7 @@ export default function App() {
               </div>
             )}
             
-            <div className="flex flex-wrap justify-center mt-6 pb-6 gap-6 text-sm text-gray-600 font-bold border-t border-gray-100 pt-4">
+            <div className="flex flex-wrap justify-center mt-2 pb-4 gap-6 text-sm text-gray-600 font-bold border-t border-gray-100 pt-4">
               <span className="flex items-center gap-2"><span className="w-4 h-4 rounded-sm shadow-sm" style={{ backgroundColor: COLORS.copy }}></span> Copy</span>
               <span className="flex items-center gap-2"><span className="w-4 h-4 rounded-sm shadow-sm" style={{ backgroundColor: COLORS.print }}></span> Printer</span>
               <span className="flex items-center gap-2"><span className="w-4 h-4 rounded-sm shadow-sm" style={{ backgroundColor: COLORS.color }}></span> Color</span>
@@ -644,96 +1063,50 @@ export default function App() {
             </div>
             
           </div>
-        </div>
-
-        {error && <div className="bg-red-50 text-red-600 p-4 rounded-lg flex items-center gap-2"><AlertCircle size={20} />{error}</div>}
-
-        {/* --- UPLOAD SECTION --- */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4">
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 hover:border-gray-300 transition-colors">
-            <h2 className="font-semibold text-gray-700 mb-4 flex items-center gap-2">
-              <span className="bg-gray-100 p-1.5 rounded text-gray-600"><Upload size={18} /></span> ไฟล์เดือน "ก่อนหน้า"
-            </h2>
-            <div className="space-y-3">
-              {[1, 2, 3].map((num, i) => (
-                <div key={`prev-${i}`} className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-gray-500 w-16">เครื่อง {num}</span>
-                  {!prevFiles[i] ? (
-                    <input type="file" accept=".csv, .txt" className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-gray-50 file:text-gray-700 hover:file:bg-gray-100 cursor-pointer" onChange={(e) => handleFileChange(i, 'prev', e.target.files[0])} />
-                  ) : (
-                    <div className="flex-1 flex items-center justify-between bg-green-50 text-green-700 px-3 py-1.5 rounded text-sm border border-green-100 shadow-sm"><span className="truncate max-w-[200px]">{prevFiles[i].name}</span><button onClick={() => removeFile(i, 'prev')} className="text-red-500 hover:text-red-700 bg-red-50 p-1 rounded"><Trash2 size={16} /></button></div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="bg-white p-5 rounded-xl shadow-sm border border-blue-200 hover:border-blue-300 transition-colors">
-            <h2 className="font-semibold text-blue-700 mb-4 flex items-center gap-2">
-              <span className="bg-blue-100 p-1.5 rounded text-blue-600"><Upload size={18} /></span> ไฟล์เดือน "ปัจจุบัน"
-            </h2>
-            <div className="space-y-3">
-              {[1, 2, 3].map((num, i) => (
-                <div key={`curr-${i}`} className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-blue-500 w-16">เครื่อง {num}</span>
-                  {!currFiles[i] ? (
-                    <input type="file" accept=".csv, .txt" className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer" onChange={(e) => handleFileChange(i, 'curr', e.target.files[0])} />
-                  ) : (
-                    <div className="flex-1 flex items-center justify-between bg-green-50 text-green-700 px-3 py-1.5 rounded text-sm border border-green-100 shadow-sm"><span className="truncate max-w-[200px]">{currFiles[i].name}</span><button onClick={() => removeFile(i, 'curr')} className="text-red-500 hover:text-red-700 bg-red-50 p-1 rounded"><Trash2 size={16} /></button></div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="flex justify-center py-4">
-          <button onClick={calculateData} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-12 rounded-full shadow-lg transition-transform active:scale-95 text-lg flex items-center gap-2">
-            <Calculator size={20} /> คำนวณยอดการใช้งาน
-          </button>
-        </div>
+        </section>
 
         {/* --- RESULTS TABLE --- */}
         {(tableData.length > 0 || rawCurrData.length > 0) && (
           <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
             
-            <div className="flex flex-wrap gap-2 bg-gray-50 p-2 rounded-xl border border-gray-200 shadow-sm">
-              <button onClick={() => setActiveTab('summary')} className={`px-4 py-2.5 rounded-lg font-medium text-sm flex items-center gap-2 transition-colors ${activeTab === 'summary' ? 'bg-blue-600 text-white shadow' : 'bg-transparent text-gray-600 hover:bg-gray-200'}`}>
+            <div className="flex flex-wrap gap-2 bg-gray-50 p-2 rounded-xl border border-gray-200 shadow-sm" role="tablist" aria-label="เลือกชุดข้อมูลตาราง">
+              <button type="button" role="tab" aria-selected={activeTab === 'summary'} onClick={() => setActiveTab('summary')} className={`px-4 py-2.5 rounded-lg font-medium text-sm flex items-center gap-2 transition-colors ${activeTab === 'summary' ? 'bg-blue-600 text-white shadow' : 'bg-transparent text-gray-600 hover:bg-gray-200'}`}>
                 <Calculator size={18} /> สรุปยอด (ลบกันแล้ว)
               </button>
-              <button onClick={() => setActiveTab('curr')} className={`px-4 py-2.5 rounded-lg font-medium text-sm flex items-center gap-2 transition-colors ${activeTab === 'curr' ? 'bg-blue-600 text-white shadow' : 'bg-transparent text-gray-600 hover:bg-gray-200'}`}>
+              <button type="button" role="tab" aria-selected={activeTab === 'curr'} onClick={() => setActiveTab('curr')} className={`px-4 py-2.5 rounded-lg font-medium text-sm flex items-center gap-2 transition-colors ${activeTab === 'curr' ? 'bg-blue-600 text-white shadow' : 'bg-transparent text-gray-600 hover:bg-gray-200'}`}>
                 <Search size={18} /> ข้อมูลที่อ่านได้: เดือนปัจจุบัน
               </button>
-              <button onClick={() => setActiveTab('prev')} className={`px-4 py-2.5 rounded-lg font-medium text-sm flex items-center gap-2 transition-colors ${activeTab === 'prev' ? 'bg-blue-600 text-white shadow' : 'bg-transparent text-gray-600 hover:bg-gray-200'}`}>
+              <button type="button" role="tab" aria-selected={activeTab === 'prev'} onClick={() => setActiveTab('prev')} className={`px-4 py-2.5 rounded-lg font-medium text-sm flex items-center gap-2 transition-colors ${activeTab === 'prev' ? 'bg-blue-600 text-white shadow' : 'bg-transparent text-gray-600 hover:bg-gray-200'}`}>
                 <Search size={18} /> ข้อมูลที่อ่านได้: เดือนก่อนหน้า
               </button>
             </div>
 
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-              <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
-                <h3 className="font-semibold text-gray-700">{getTabTitle()} <span className="text-blue-600 ml-2 bg-blue-100 px-2 py-0.5 rounded text-xs">ยอดรวม: {displaySummary.total.toLocaleString()} แผ่น</span></h3>
+              <div className="p-4 border-b border-gray-100 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 bg-gray-50">
+                <h3 className="font-semibold text-gray-700">{getTabTitle()} <span className="inline-flex text-blue-600 mt-1 sm:mt-0 sm:ml-2 bg-blue-100 px-2 py-0.5 rounded text-xs">ยอดรวม: {displaySummary.total.toLocaleString()} แผ่น</span></h3>
                 <button onClick={exportExcel} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded text-sm font-medium transition-colors">
                   <FileDown size={16} /> ส่งออก Excel
                 </button>
               </div>
               <div className="overflow-x-auto max-h-[600px] custom-scrollbar">
                 <table className="w-full text-left border-collapse">
+                  <caption className="sr-only">{getTabTitle()}</caption>
                   <thead className="sticky top-0 bg-gray-100 shadow-sm z-10">
                     <tr className="text-gray-600 text-sm">
-                      <th className="p-3 cursor-pointer hover:bg-gray-200" onClick={() => handleSort('name')}>ชื่อ (Name) {sortConfig?.key === 'name' ? (sortConfig.direction === 'asc' ? '🔼' : '🔽') : ''}</th>
-                      <th className="p-3 cursor-pointer hover:bg-gray-200">แผนก (Dept)</th>
-                      <th className="p-3 text-right cursor-pointer hover:bg-gray-200" onClick={() => handleSort('copy')}>Copy {sortConfig?.key === 'copy' ? (sortConfig.direction === 'asc' ? '🔼' : '🔽') : ''}</th>
-                      <th className="p-3 text-right cursor-pointer hover:bg-gray-200" onClick={() => handleSort('print')}>Print {sortConfig?.key === 'print' ? (sortConfig.direction === 'asc' ? '🔼' : '🔽') : ''}</th>
-                      <th className="p-3 text-right cursor-pointer hover:bg-gray-200" onClick={() => handleSort('color')}>Color {sortConfig?.key === 'color' ? (sortConfig.direction === 'asc' ? '🔼' : '🔽') : ''}</th>
-                      <th className="p-3 text-right cursor-pointer hover:bg-gray-200" onClick={() => handleSort('black')}>Black {sortConfig?.key === 'black' ? (sortConfig.direction === 'asc' ? '🔼' : '🔽') : ''}</th>
-                      <th className="p-3 text-right cursor-pointer hover:bg-gray-200 bg-blue-50 text-blue-700" onClick={() => handleSort('total')}>รวมทั้งหมด {sortConfig?.key === 'total' ? (sortConfig.direction === 'asc' ? '🔼' : '🔽') : ''}</th>
+                      <SortableHeader sortKey="name">ชื่อ (Name)</SortableHeader>
+                      <th scope="col" className="p-3 text-left font-semibold">แผนก (Dept)</th>
+                      <SortableHeader sortKey="copy" align="right">Copy</SortableHeader>
+                      <SortableHeader sortKey="print" align="right">Print</SortableHeader>
+                      <SortableHeader sortKey="color" align="right">Color</SortableHeader>
+                      <SortableHeader sortKey="black" align="right">Black</SortableHeader>
+                      <SortableHeader sortKey="total" align="right" highlight>รวมทั้งหมด</SortableHeader>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
                     {sortedData.map((row, idx) => (
                       <tr key={idx} className="hover:bg-gray-50 transition-colors">
-                        <td className="p-3 font-medium text-gray-800">{row.name}</td>
-                        <td className="p-3 text-xs text-gray-500">{DEPARTMENT_MAP[row.name] || '-'}</td>
+                        <th scope="row" className="p-3 font-medium text-gray-800">{row.name}</th>
+                        <td className="p-3 text-xs text-gray-500">{departmentMap[row.name] || '-'}</td>
                         <td className="p-3 text-right text-gray-600">{row.copy.toLocaleString()}</td>
                         <td className="p-3 text-right text-gray-600">{row.print.toLocaleString()}</td>
                         <td className="p-3 text-right text-purple-600">{row.color.toLocaleString()}</td>
