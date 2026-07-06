@@ -35,6 +35,7 @@ const DEFAULT_DEPARTMENT_MAP = {
 
 const DEPARTMENTS = ['All', 'MD Office', 'Support', 'SSE1', 'SSE2', 'SSE3', 'SSE4', 'Purchasing', 'Accounting & Finance', 'HR & Admin', 'IT', 'Material Planning', 'Material Management', 'Songkla Branch', 'Others'];
 const SALES_DEPARTMENTS = ['MD Office', 'Support', 'SSE1', 'SSE2', 'SSE3', 'SSE4'];
+const RAW_COUNTER_PARSER_VERSION = 3;
 
 // ข้อมูลจำลองเพื่อให้กราฟแสดงทันที
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -60,6 +61,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('summary');
   const [historyData, setHistoryData] = useState([]);
   const [counterHistory, setCounterHistory] = useState({});
+  const [counterHistoryMeta, setCounterHistoryMeta] = useState({});
   const [departmentMap, setDepartmentMap] = useState(DEFAULT_DEPARTMENT_MAP);
   const [hiddenUsers, setHiddenUsers] = useState([]);
   
@@ -102,6 +104,7 @@ export default function App() {
   useEffect(() => {
     const saved = localStorage.getItem('konica_history');
     const savedCounters = localStorage.getItem('konica_counter_history');
+    const savedCounterMeta = localStorage.getItem('konica_counter_history_meta');
     const savedDepartments = localStorage.getItem('konica_department_map');
     const savedHiddenUsers = localStorage.getItem('konica_hidden_users');
 
@@ -145,6 +148,10 @@ export default function App() {
       setCounterHistory(JSON.parse(savedCounters));
     }
 
+    if (savedCounterMeta) {
+      setCounterHistoryMeta(JSON.parse(savedCounterMeta));
+    }
+
     if (savedDepartments) {
       setDepartmentMap({ ...DEFAULT_DEPARTMENT_MAP, ...JSON.parse(savedDepartments) });
     }
@@ -179,64 +186,286 @@ export default function App() {
     type === 'prev' ? setPrevFiles(newFiles) : setCurrFiles(newFiles);
   };
 
-  const parseFile = async (file) => {
-    if (!file) return [];
-    const text = await file.text();
-    const lines = text.split('\n').map(l => l.replace(/\r/g, ''));
+  const normalizeUserName = (value) => {
+    let name = String(value || '').trim().toLowerCase();
+
+    // 🔄 แปลงชื่อผิด/alias อัตโนมัติ
+    if (name === 'ybenjawan') {
+      name = 'benjawan';
+    }
+
+    return name;
+  };
+
+  const parseNumber = (value) => {
+    const num = parseInt(String(value ?? '').replace(/,/g, '').trim(), 10);
+    return Number.isNaN(num) ? 0 : num;
+  };
+
+  const parseStrictNumber = (value) => {
+    const raw = String(value ?? '').replace(/,/g, '').trim();
+    if (raw === '') return NaN;
+
+    const num = parseInt(raw, 10);
+    return Number.isNaN(num) ? NaN : num;
+  };
+
+  const isInvalidUserName = (name) => {
+    if (!name) return true;
+    if (name === 'user name') return true;
+    if (name === 'username') return true;
+    if (name === 'name') return true;
+    if (name.includes('total')) return true;
+    if (name.includes('รวม')) return true;
+    if (IGNORE_NAMES.includes(name)) return true;
+
+    return false;
+  };
+
+  const readUploadedFileText = async (file) => {
+    const buffer = await file.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+
+    // ✅ รองรับไฟล์ .txt ที่ Save จาก Windows/Excel เป็น UTF-16 LE/BE
+    // เช่นไฟล์สรุป 5 คอลัมน์ที่ขึ้นต้นด้วย BOM FF FE
+    if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) {
+      return new TextDecoder('utf-16le').decode(bytes);
+    }
+
+    if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
+      return new TextDecoder('utf-16be').decode(bytes);
+    }
+
+    // ✅ รองรับ UTF-8 / UTF-8 with BOM และไฟล์ Counter ดิบจาก KONICA เดิม
+    return new TextDecoder('utf-8').decode(bytes);
+  };
+
+  const splitDataLine = (line) => {
+    const raw = String(line || '').trim();
+    if (!raw) return [];
+
+    // ไฟล์จากเครื่อง KONICA ส่วนใหญ่คั่นด้วย Tab
+    if (raw.includes('\t')) {
+      return raw.split('\t').map(col => col.trim());
+    }
+
+    // รองรับ CSV
+    if (raw.includes(',')) {
+      return raw.split(',').map(col => col.trim());
+    }
+
+    // รองรับไฟล์สรุป .txt ที่คั่นด้วยช่องว่างหลายช่อง
+    return raw.split(/\s+/).map(col => col.trim());
+  };
+
+  const isSummaryHeaderLine = (cols) => {
+    const joined = cols.join('|').toLowerCase();
+
+    return (
+      joined.includes('copy') &&
+      joined.includes('print') &&
+      joined.includes('color') &&
+      joined.includes('black')
+    );
+  };
+
+  const parseSummaryRow = (cols) => {
+    // ✅ Format ใหม่แบบสรุปแล้ว:
+    // name copy print color black
+    // เช่น Sittichai 91 3697 1402 2386
+    if (cols.length < 5) return null;
+    if (isSummaryHeaderLine(cols)) return null;
+
+    const name = normalizeUserName(cols[0]);
+    if (isInvalidUserName(name)) return null;
+
+    const copy = parseStrictNumber(cols[1]);
+    const print = parseStrictNumber(cols[2]);
+    const color = parseStrictNumber(cols[3]);
+    const black = parseStrictNumber(cols[4]);
+
+    // ต้องเป็นตัวเลขครบ 4 ช่อง เพื่อกันบรรทัด Machine Name / Serial No. / Date หลุดเข้ามา
+    if (
+      Number.isNaN(copy) ||
+      Number.isNaN(print) ||
+      Number.isNaN(color) ||
+      Number.isNaN(black)
+    ) {
+      return null;
+    }
+
+    return {
+      name,
+      copy,
+      print,
+      color,
+      black
+    };
+  };
+
+  const parseRawCounterRow = (cols) => {
+    // ✅ Format เดิมจากเครื่อง KONICA:
+    // รองรับทั้งไฟล์เครื่องสี 50+ คอลัมน์ และเครื่องขาวดำ 25+ คอลัมน์
+    if (cols.length < 25) return null;
+
+    const name = normalizeUserName(cols[0]);
+    if (isInvalidUserName(name)) return null;
+
+    // ต้องใช้ strict เพื่อกันบรรทัด Machine Name / Serial No. / Date / Header หลุดเข้ามา
+    const totalCounter = parseStrictNumber(cols[1]);
+    if (Number.isNaN(totalCounter)) return null;
+
+    const getVal = (idx) => parseNumber(cols[idx]);
+
+    let copy = 0;
+    let print = 0;
+    let color = 0;
+    let black = 0;
+
+    if (cols.length >= 50) {
+      // 🖨️ เครื่องสี (Color Machine) เช่น C258, C300i, C360i
+      // โครงไฟล์ดิบ KONICA:
+      // index 22 = Copy > Total > Total
+      // index 36 = Printer > Total > Total
+      // index 48 = Color > Total > Full Color
+      // index 49 = Color > Total > Black
+      //
+      // หมายเหตุ:
+      // โค้ดเดิมใช้ 21/35/47/48 ทำให้เลื่อนไป 1 คอลัมน์
+      // เช่น index 21 คือ Nin1PrintRate ไม่ใช่ Copy Total
+      copy = getVal(22);
+      print = getVal(36);
+      color = getVal(48);
+      black = getVal(49);
+    } else {
+      // 🖨️ เครื่องขาวดำ (Mono Machine) เช่น 950i
+      copy = getVal(22);
+      print = getVal(25);
+      color = 0;
+      black = copy + print;
+    }
+
+    return {
+      name,
+      copy,
+      print,
+      color,
+      black
+    };
+  };
+
+  const isExcelFile = (file) => {
+    const fileName = String(file?.name || '').toLowerCase();
+    return fileName.endsWith('.xlsx') || fileName.endsWith('.xls');
+  };
+
+  const loadXlsxLibrary = async () => {
+    if (window.XLSX) return window.XLSX;
+
+    await new Promise((resolve, reject) => {
+      const existingScript = document.querySelector('script[data-konica-xlsx="true"]');
+
+      if (existingScript) {
+        existingScript.addEventListener('load', resolve, { once: true });
+        existingScript.addEventListener('error', reject, { once: true });
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+      script.async = true;
+      script.dataset.konicaXlsx = 'true';
+      script.onload = resolve;
+      script.onerror = reject;
+      document.body.appendChild(script);
+    });
+
+    if (!window.XLSX) {
+      throw new Error('XLSX library failed to load');
+    }
+
+    return window.XLSX;
+  };
+
+  const parseColumnsToUsageRow = (cols) => {
+    if (!Array.isArray(cols) || cols.length === 0) return null;
+
+    let row = null;
+
+    // ✅ Format ใหม่: ไฟล์สรุป 5 คอลัมน์ name/copy/print/color/black
+    // ใช้ช่วง < 25 เพื่อไม่ชนกับไฟล์ดิบ KONICA เดิม
+    if (cols.length >= 5 && cols.length < 25) {
+      row = parseSummaryRow(cols);
+    }
+
+    // ✅ Format เดิม: ไฟล์ Counter ดิบจากเครื่อง KONICA ยังรองรับเหมือนเดิม
+    if (!row && cols.length >= 25) {
+      row = parseRawCounterRow(cols);
+    }
+
+    return row;
+  };
+
+  const parseTextFile = async (file) => {
+    const text = await readUploadedFileText(file);
+
+    // ลบ BOM กรณีไฟล์ .txt ถูก save จาก Windows/Excel แล้วมีอักขระแฝงหน้าบรรทัดแรก
+    const cleanText = text.replace(/^\uFEFF/, '');
+
+    const lines = cleanText
+      .split('\n')
+      .map(line => line.replace(/\r/g, ''))
+      .filter(line => line.trim() !== '');
+
     const data = [];
-    
-    for (let i = 0; i < lines.length; i++) {
-      let cols = lines[i].split('\t');
-      if (cols.length < 10) cols = lines[i].split(',');
 
-      // ✅ รองรับทั้งไฟล์เครื่องสี (60+ คอลัมน์) และเครื่องขาวดำ 950i (34 คอลัมน์)
-      if (cols.length >= 25) {
-        let name = String(cols[0]).trim().toLowerCase();
-        
-        // 🔄 แปลงชื่อ ybenjawan เป็น benjawan อัตโนมัติ
-        if (name === 'ybenjawan') {
-          name = 'benjawan';
-        }
+    for (const line of lines) {
+      const cols = splitDataLine(line);
+      const row = parseColumnsToUsageRow(cols);
 
-        const totalCounter = parseInt(String(cols[1]).replace(/,/g, ''), 10);
-
-        if (!name || name === 'user name' || name === 'name' || name.includes('total') || name.includes('รวม') || isNaN(totalCounter)) {
-          continue;
-        }
-        
-        if (IGNORE_NAMES.includes(name)) continue;
-
-        const getVal = (idx) => {
-          const val = parseInt(String(cols[idx]).replace(/,/g, ''), 10);
-          return isNaN(val) ? 0 : val;
-        };
-
-        let copy = 0, print = 0, color = 0, black = 0;
-
-        if (cols.length >= 50) {
-          // 🖨️ เครื่องสี (Color Machine) เช่น C258, C360i
-          copy = getVal(22);
-          print = getVal(36);
-          color = getVal(48);
-          black = getVal(49);
-        } else {
-          // 🖨️ เครื่องขาวดำ (Mono Machine) เช่น 950i
-          copy = getVal(22);
-          print = getVal(25);
-          color = 0;
-          black = copy + print; // เครื่องขาวดำ พิมพ์ทุกอย่างถือเป็นขาวดำหมด
-        }
-
-        data.push({ 
-          name, 
-          copy, 
-          print, 
-          color, 
-          black 
-        });
+      if (row) {
+        data.push(row);
       }
     }
+
     return data;
+  };
+
+  const parseExcelFile = async (file) => {
+    const XLSX = await loadXlsxLibrary();
+    const arrayBuffer = await file.arrayBuffer();
+    const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+    const data = [];
+
+    workbook.SheetNames.forEach(sheetName => {
+      const worksheet = workbook.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(worksheet, {
+        header: 1,
+        raw: false,
+        defval: ''
+      });
+
+      rows.forEach(rowValues => {
+        const cols = rowValues.map(value => String(value ?? '').trim());
+        const row = parseColumnsToUsageRow(cols);
+
+        if (row) {
+          data.push(row);
+        }
+      });
+    });
+
+    return data;
+  };
+
+  const parseFile = async (file) => {
+    if (!file) return [];
+
+    if (isExcelFile(file)) {
+      return parseExcelFile(file);
+    }
+
+    return parseTextFile(file);
   };
 
   const aggregateUsage = (rows) => {
@@ -357,8 +586,14 @@ export default function App() {
     localStorage.setItem('konica_history', JSON.stringify(newHistory));
     if (rawCurrData.length > 0) {
       const nextCounterHistory = { ...counterHistory, [monthStr]: rawCurrData };
+      const nextCounterHistoryMeta = {
+        ...counterHistoryMeta,
+        [monthStr]: { parserVersion: RAW_COUNTER_PARSER_VERSION, savedAt: new Date().toISOString() }
+      };
       setCounterHistory(nextCounterHistory);
+      setCounterHistoryMeta(nextCounterHistoryMeta);
       localStorage.setItem('konica_counter_history', JSON.stringify(nextCounterHistory));
+      localStorage.setItem('konica_counter_history_meta', JSON.stringify(nextCounterHistoryMeta));
     }
     showToast('บันทึกประวัติสำเร็จ');
   };
@@ -366,8 +601,10 @@ export default function App() {
   const clearHistory = () => {
     setHistoryData([]);
     setCounterHistory({});
+    setCounterHistoryMeta({});
     localStorage.removeItem('konica_history');
     localStorage.removeItem('konica_counter_history');
+    localStorage.removeItem('konica_counter_history_meta');
     setIsConfirmingClear(false);
     showToast('ล้างประวัติกราฟแล้ว');
   };
@@ -433,7 +670,12 @@ export default function App() {
 
   const getUsersFromCounterHistory = (monthKey) => {
     const currentRows = counterHistory[monthKey] || [];
-    const previousRows = counterHistory[getPreviousHistoryKey(monthKey)] || [];
+    const previousKey = getPreviousHistoryKey(monthKey);
+    const previousRows = counterHistory[previousKey] || [];
+    if (
+      counterHistoryMeta[monthKey]?.parserVersion !== RAW_COUNTER_PARSER_VERSION ||
+      counterHistoryMeta[previousKey]?.parserVersion !== RAW_COUNTER_PARSER_VERSION
+    ) return [];
     if (currentRows.length === 0 || previousRows.length === 0) return [];
 
     const currentMap = aggregateUsage(currentRows);
@@ -616,6 +858,7 @@ export default function App() {
       exportedAt: new Date().toISOString(),
       historyData,
       counterHistory,
+      counterHistoryMeta,
       departmentMap,
       hiddenUsers
     };
@@ -642,6 +885,13 @@ export default function App() {
       if (payload.counterHistory && typeof payload.counterHistory === 'object') {
         setCounterHistory(payload.counterHistory);
         localStorage.setItem('konica_counter_history', JSON.stringify(payload.counterHistory));
+      }
+      if (payload.counterHistoryMeta && typeof payload.counterHistoryMeta === 'object') {
+        setCounterHistoryMeta(payload.counterHistoryMeta);
+        localStorage.setItem('konica_counter_history_meta', JSON.stringify(payload.counterHistoryMeta));
+      } else {
+        setCounterHistoryMeta({});
+        localStorage.removeItem('konica_counter_history_meta');
       }
       if (payload.departmentMap && typeof payload.departmentMap === 'object') {
         const nextDepartmentMap = { ...DEFAULT_DEPARTMENT_MAP, ...payload.departmentMap };
@@ -758,38 +1008,79 @@ export default function App() {
     setSortConfig({ key, direction });
   };
 
-  let currentDisplayData = tableData;
-  if (activeTab === 'curr') currentDisplayData = rawCurrData;
-  if (activeTab === 'prev') currentDisplayData = rawPrevData;
+  const requestedResultMonthKey = getMonthKey(selMonthIdx, selYear);
+  const hasRequestedSavedData = Boolean(counterHistory[requestedResultMonthKey])
+    || historyData.some(item => item.month === requestedResultMonthKey);
+  const savedMonthCandidates = Array.from(new Set([
+    ...historyData.map(item => item.month),
+    ...Object.keys(counterHistory)
+  ]))
+    .map(month => ({ month, ...parseHistoryMonth(month) }))
+    .filter(item => item.year === selYear && item.monthIndex >= 0)
+    .sort((a, b) => a.monthIndex - b.monthIndex);
+  const fallbackSavedMonth = savedMonthCandidates
+    .filter(item => item.monthIndex <= Number(selMonthIdx))
+    .at(-1) || savedMonthCandidates.at(-1);
 
-  const sortedData = useMemo(() => {
-    let sortable = [...currentDisplayData];
+  const currentResultPeriod = getUploadPeriodFromFiles(currFiles);
+  const currentResultMonthKey = currentResultPeriod
+    ? getMonthKey(currentResultPeriod.monthIndex, currentResultPeriod.year)
+    : (hasRequestedSavedData ? requestedResultMonthKey : (fallbackSavedMonth?.month || requestedResultMonthKey));
+  const previousResultPeriod = getUploadPeriodFromFiles(prevFiles);
+  const previousResultMonthKey = previousResultPeriod
+    ? getMonthKey(previousResultPeriod.monthIndex, previousResultPeriod.year)
+    : getPreviousHistoryKey(currentResultMonthKey);
+
+  const hasTrustedCurrentRaw = counterHistoryMeta[currentResultMonthKey]?.parserVersion === RAW_COUNTER_PARSER_VERSION;
+  const hasTrustedPreviousRaw = counterHistoryMeta[previousResultMonthKey]?.parserVersion === RAW_COUNTER_PARSER_VERSION;
+  const savedRawCurrData = hasTrustedCurrentRaw ? rowsFromUsageMap(aggregateUsage(counterHistory[currentResultMonthKey] || [])) : [];
+  const savedRawPrevData = hasTrustedPreviousRaw ? rowsFromUsageMap(aggregateUsage(counterHistory[previousResultMonthKey] || [])) : [];
+  const savedHistoryEntry = historyData.find(item => item.month === currentResultMonthKey);
+  const savedComparisonData = getUsersFromCounterHistory(currentResultMonthKey);
+  const effectiveTableData = tableData.length > 0
+    ? tableData
+    : (savedComparisonData.length > 0 ? savedComparisonData : (savedHistoryEntry?.users || []));
+  const effectiveRawCurrData = rawCurrData.length > 0
+    ? rawCurrData
+    : savedRawCurrData;
+  const effectiveRawPrevData = rawPrevData.length > 0
+    ? rawPrevData
+    : savedRawPrevData;
+  const currentDataSourceLabel = rawCurrData.length > 0 || savedRawCurrData.length > 0 ? 'ข้อมูลดิบ' : 'ไม่มีข้อมูลดิบที่บันทึกไว้';
+  const previousDataSourceLabel = rawPrevData.length > 0 || savedRawPrevData.length > 0 ? 'ข้อมูลดิบ' : 'ไม่มีข้อมูลดิบที่บันทึกไว้';
+
+  let currentDisplayData = effectiveTableData;
+  if (activeTab === 'curr') currentDisplayData = effectiveRawCurrData;
+  if (activeTab === 'prev') currentDisplayData = effectiveRawPrevData;
+
+  const sortResultRows = (rows) => {
+    const sortable = [...rows];
     sortable.sort((a, b) => {
       if (a[sortConfig.key] < b[sortConfig.key]) return sortConfig.direction === 'asc' ? -1 : 1;
       if (a[sortConfig.key] > b[sortConfig.key]) return sortConfig.direction === 'asc' ? 1 : -1;
       return 0;
     });
     return sortable;
-  }, [currentDisplayData, sortConfig]);
+  };
+  const sortedData = sortResultRows(currentDisplayData);
+  const comparisonSortedData = sortResultRows(effectiveTableData);
+  const rawCurrentSortedData = [...effectiveRawCurrData].sort((a, b) => (b.total || 0) - (a.total || 0));
+  const rawPreviousSortedData = [...effectiveRawPrevData].sort((a, b) => (b.total || 0) - (a.total || 0));
 
   const displaySummary = currentDisplayData.reduce((acc, curr) => ({
     copy: acc.copy + curr.copy, print: acc.print + curr.print,
     color: acc.color + curr.color, black: acc.black + curr.black, total: acc.total + curr.total,
   }), { copy: 0, print: 0, color: 0, black: 0, total: 0 });
-
-  const currentResultPeriod = getUploadPeriodFromFiles(currFiles);
-  const currentResultMonthKey = currentResultPeriod
-    ? getMonthKey(currentResultPeriod.monthIndex, currentResultPeriod.year)
-    : getMonthKey(selMonthIdx, selYear);
-  const previousResultPeriod = getUploadPeriodFromFiles(prevFiles);
-  const previousResultMonthKey = previousResultPeriod
-    ? getMonthKey(previousResultPeriod.monthIndex, previousResultPeriod.year)
-    : getPreviousMonthKey(currentResultPeriod?.monthIndex ?? selMonthIdx, currentResultPeriod?.year ?? selYear);
+  const comparisonSummary = effectiveTableData.reduce((acc, curr) => ({
+    copy: acc.copy + curr.copy, print: acc.print + curr.print,
+    color: acc.color + curr.color, black: acc.black + curr.black, total: acc.total + curr.total,
+  }), { copy: 0, print: 0, color: 0, black: 0, total: 0 });
+  const hasResultTableData = effectiveTableData.length > 0 || effectiveRawCurrData.length > 0 || effectiveRawPrevData.length > 0;
 
   const getTabTitle = () => {
     if (activeTab === 'summary') return 'ตารางสรุปรายบุคคล (สรุปยอดลบกันแล้ว)';
-    if (activeTab === 'curr') return `ข้อมูลที่อ่านได้ดิบ: เดือนปัจจุบัน (${currentResultMonthKey})`;
-    return `ข้อมูลที่อ่านได้ดิบ: เดือนก่อนหน้า (${previousResultMonthKey})`;
+    if (activeTab === 'curr') return `ข้อมูลที่อ่านได้: เดือนปัจจุบัน (${currentResultMonthKey})`;
+    return `ข้อมูลที่อ่านได้: เดือนก่อนหน้า (${previousResultMonthKey})`;
   };
 
   const getSortDirection = (key) => sortConfig.key === key ? sortConfig.direction : undefined;
@@ -1027,7 +1318,7 @@ export default function App() {
                   <div key={`prev-${i}`} className="flex flex-col sm:flex-row sm:items-center gap-2">
                     <label htmlFor={`prev-file-${i}`} className="text-sm font-medium text-gray-500 sm:w-16">เครื่อง {num}</label>
                     {!prevFiles[i] ? (
-                      <input id={`prev-file-${i}`} type="file" accept=".csv, .txt" className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-gray-50 file:text-gray-700 hover:file:bg-gray-100 cursor-pointer" onChange={(e) => handleFileChange(i, 'prev', e.target.files[0])} />
+                      <input id={`prev-file-${i}`} type="file" accept=".csv, .txt, .xlsx, .xls" className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-gray-50 file:text-gray-700 hover:file:bg-gray-100 cursor-pointer" onChange={(e) => handleFileChange(i, 'prev', e.target.files[0])} />
                     ) : (
                       <div className="flex-1 flex items-center justify-between bg-green-50 text-green-700 px-3 py-2 rounded text-sm border border-green-100 shadow-sm"><span className="truncate max-w-[240px]">{prevFiles[i].name}</span><button aria-label={`ลบไฟล์เดือนก่อนหน้า เครื่อง ${num}`} onClick={() => removeFile(i, 'prev')} className="text-red-500 hover:text-red-700 bg-red-50 p-1 rounded"><Trash2 size={16} /></button></div>
                     )}
@@ -1043,7 +1334,7 @@ export default function App() {
                   <div key={`curr-${i}`} className="flex flex-col sm:flex-row sm:items-center gap-2">
                     <label htmlFor={`curr-file-${i}`} className="text-sm font-medium text-blue-500 sm:w-16">เครื่อง {num}</label>
                     {!currFiles[i] ? (
-                      <input id={`curr-file-${i}`} type="file" accept=".csv, .txt" className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer" onChange={(e) => handleFileChange(i, 'curr', e.target.files[0])} />
+                      <input id={`curr-file-${i}`} type="file" accept=".csv, .txt, .xlsx, .xls" className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer" onChange={(e) => handleFileChange(i, 'curr', e.target.files[0])} />
                     ) : (
                       <div className="flex-1 flex items-center justify-between bg-green-50 text-green-700 px-3 py-2 rounded text-sm border border-green-100 shadow-sm"><span className="truncate max-w-[240px]">{currFiles[i].name}</span><button aria-label={`ลบไฟล์เดือนปัจจุบัน เครื่อง ${num}`} onClick={() => removeFile(i, 'curr')} className="text-red-500 hover:text-red-700 bg-red-50 p-1 rounded"><Trash2 size={16} /></button></div>
                     )}
@@ -1639,7 +1930,7 @@ export default function App() {
         </section>
 
         {/* --- RESULTS TABLE --- */}
-        {(tableData.length > 0 || rawCurrData.length > 0) && (
+        {hasResultTableData && (
           <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
             
             <div className="flex flex-wrap gap-2 bg-gray-50 p-2 rounded-xl border border-gray-200 shadow-sm" role="tablist" aria-label="เลือกชุดข้อมูลตาราง">
@@ -1647,16 +1938,142 @@ export default function App() {
                 <Calculator size={18} /> สรุปยอด (ลบกันแล้ว)
               </button>
               <button type="button" role="tab" aria-selected={activeTab === 'curr'} onClick={() => setActiveTab('curr')} className={`px-4 py-2.5 rounded-lg font-medium text-sm flex items-center gap-2 transition-colors ${activeTab === 'curr' ? 'bg-blue-600 text-white shadow' : 'bg-transparent text-gray-600 hover:bg-gray-200'}`}>
-                <Search size={18} /> ข้อมูลที่อ่านได้: เดือนปัจจุบัน <span className={`text-xs ${activeTab === 'curr' ? 'text-blue-100' : 'text-gray-500'}`}>({currentResultMonthKey})</span>
+                <Search size={18} className="shrink-0" />
+                <span className="flex flex-col items-start leading-tight">
+                  <span>ข้อมูลที่อ่านได้: เดือนปัจจุบัน</span>
+                  <span className={`mt-1 rounded px-2 py-0.5 text-xs font-bold ${activeTab === 'curr' ? 'bg-white/20 text-white' : 'bg-blue-50 text-blue-700'}`}>{currentResultMonthKey}</span>
+                </span>
               </button>
               <button type="button" role="tab" aria-selected={activeTab === 'prev'} onClick={() => setActiveTab('prev')} className={`px-4 py-2.5 rounded-lg font-medium text-sm flex items-center gap-2 transition-colors ${activeTab === 'prev' ? 'bg-blue-600 text-white shadow' : 'bg-transparent text-gray-600 hover:bg-gray-200'}`}>
-                <Search size={18} /> ข้อมูลที่อ่านได้: เดือนก่อนหน้า <span className={`text-xs ${activeTab === 'prev' ? 'text-blue-100' : 'text-gray-500'}`}>({previousResultMonthKey})</span>
+                <Search size={18} className="shrink-0" />
+                <span className="flex flex-col items-start leading-tight">
+                  <span>ข้อมูลที่อ่านได้: เดือนก่อนหน้า</span>
+                  <span className={`mt-1 rounded px-2 py-0.5 text-xs font-bold ${activeTab === 'prev' ? 'bg-white/20 text-white' : 'bg-blue-50 text-blue-700'}`}>{previousResultMonthKey}</span>
+                </span>
               </button>
             </div>
 
+            {(effectiveRawCurrData.length > 0 || effectiveRawPrevData.length > 0) && (
+              <div className="bg-white rounded-xl shadow-sm border border-amber-100 overflow-hidden">
+                <div className="p-4 border-b border-amber-100 bg-amber-50/70">
+                  <h3 className="font-semibold text-amber-900">ตารางข้อมูลดิบที่ใช้เอามาลบกัน</h3>
+                  <p className="mt-1 text-xs font-semibold text-amber-700">
+                    ระบบใช้ข้อมูลดิบเดือนปัจจุบันลบกับข้อมูลดิบเดือนก่อนหน้าเพื่อสร้างตารางเปรียบเทียบ
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 gap-4 p-4 xl:grid-cols-2">
+                  {[
+                    { title: 'ข้อมูลดิบเดือนปัจจุบัน', period: currentResultMonthKey, rows: rawCurrentSortedData, tone: 'blue' },
+                    { title: 'ข้อมูลดิบเดือนก่อนหน้า', period: previousResultMonthKey, rows: rawPreviousSortedData, tone: 'slate' }
+                  ].map(block => (
+                    <div key={block.title} className="rounded-lg border border-gray-200 overflow-hidden">
+                      <div className={`flex flex-col gap-1 border-b border-gray-200 p-3 ${block.tone === 'blue' ? 'bg-blue-50' : 'bg-slate-50'}`}>
+                        <h4 className="font-semibold text-gray-800">{block.title}</h4>
+                        <p className="text-xs font-bold text-gray-600">{block.period} | {block.rows.length.toLocaleString()} รายการ</p>
+                      </div>
+                      <div className="overflow-x-auto max-h-[360px] custom-scrollbar">
+                        <table className="w-full min-w-[680px] text-left border-collapse text-sm">
+                          <caption className="sr-only">{block.title}</caption>
+                          <thead className="sticky top-0 bg-gray-100 shadow-sm z-10">
+                            <tr className="text-gray-600">
+                              <th scope="col" className="p-2 text-left font-semibold">ชื่อ</th>
+                              <th scope="col" className="p-2 text-left font-semibold">แผนก</th>
+                              <th scope="col" className="p-2 text-right font-semibold">Copy</th>
+                              <th scope="col" className="p-2 text-right font-semibold">Print</th>
+                              <th scope="col" className="p-2 text-right font-semibold">Color</th>
+                              <th scope="col" className="p-2 text-right font-semibold">Black</th>
+                              <th scope="col" className="p-2 text-right font-semibold bg-blue-50 text-blue-700">รวม</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {block.rows.map((row, idx) => (
+                              <tr key={`${block.title}-${row.name}-${idx}`} className="hover:bg-gray-50">
+                                <th scope="row" className="p-2 font-medium text-gray-800">{row.name}</th>
+                                <td className="p-2 text-xs text-gray-500">{departmentMap[row.name] || '-'}</td>
+                                <td className="p-2 text-right text-gray-600">{row.copy.toLocaleString()}</td>
+                                <td className="p-2 text-right text-gray-600">{row.print.toLocaleString()}</td>
+                                <td className="p-2 text-right text-purple-600">{row.color.toLocaleString()}</td>
+                                <td className="p-2 text-right text-gray-600">{row.black.toLocaleString()}</td>
+                                <td className="p-2 text-right font-bold text-blue-600 bg-blue-50/30">{row.total.toLocaleString()}</td>
+                              </tr>
+                            ))}
+                            {block.rows.length === 0 && (
+                              <tr>
+                                <td colSpan="7" className="p-8 text-center text-gray-400">ยังไม่มีข้อมูลดิบชุดนี้</td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {activeTab !== 'summary' && effectiveTableData.length > 0 && (
+              <div className="bg-white rounded-xl shadow-sm border border-blue-100 overflow-hidden">
+                <div className="p-4 border-b border-blue-100 bg-blue-50/60 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div>
+                    <h3 className="font-semibold text-blue-900">ตารางเปรียบเทียบ (ลบกันแล้ว)</h3>
+                    <p className="mt-1 text-xs font-semibold text-blue-700">
+                      เดือนปัจจุบัน {currentResultMonthKey} ลบกับเดือนก่อนหน้า {previousResultMonthKey}
+                    </p>
+                  </div>
+                  <span className="inline-flex self-start rounded bg-white px-3 py-1 text-xs font-bold text-blue-700 shadow-sm">
+                    ยอดรวม: {comparisonSummary.total.toLocaleString()} แผ่น
+                  </span>
+                </div>
+                <div className="overflow-x-auto max-h-[360px] custom-scrollbar">
+                  <table className="w-full text-left border-collapse">
+                    <caption className="sr-only">ตารางเปรียบเทียบลบกันแล้ว</caption>
+                    <thead className="sticky top-0 bg-gray-100 shadow-sm z-10">
+                      <tr className="text-gray-600 text-sm">
+                        <th scope="col" className="p-3 text-left font-semibold">ชื่อ (Name)</th>
+                        <th scope="col" className="p-3 text-left font-semibold">แผนก (Dept)</th>
+                        <th scope="col" className="p-3 text-right font-semibold">Copy</th>
+                        <th scope="col" className="p-3 text-right font-semibold">Print</th>
+                        <th scope="col" className="p-3 text-right font-semibold">Color</th>
+                        <th scope="col" className="p-3 text-right font-semibold">Black</th>
+                        <th scope="col" className="p-3 text-right font-semibold bg-blue-50 text-blue-700">รวมทั้งหมด</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {comparisonSortedData.map((row, idx) => (
+                        <tr key={`comparison-${idx}`} className="hover:bg-gray-50 transition-colors">
+                          <th scope="row" className="p-3 font-medium text-gray-800">{row.name}</th>
+                          <td className="p-3 text-xs text-gray-500">{departmentMap[row.name] || '-'}</td>
+                          <td className="p-3 text-right text-gray-600">{row.copy.toLocaleString()}</td>
+                          <td className="p-3 text-right text-gray-600">{row.print.toLocaleString()}</td>
+                          <td className="p-3 text-right text-purple-600">{row.color.toLocaleString()}</td>
+                          <td className="p-3 text-right text-gray-600">{row.black.toLocaleString()}</td>
+                          <td className="p-3 text-right font-bold text-blue-600 bg-blue-50/30">{row.total.toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
               <div className="p-4 border-b border-gray-100 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 bg-gray-50">
-                <h3 className="font-semibold text-gray-700">{getTabTitle()} <span className="inline-flex text-blue-600 mt-1 sm:mt-0 sm:ml-2 bg-blue-100 px-2 py-0.5 rounded text-xs">ยอดรวม: {displaySummary.total.toLocaleString()} แผ่น</span></h3>
+                <div>
+                  <h3 className="font-semibold text-gray-700">{getTabTitle()} <span className="inline-flex text-blue-600 mt-1 sm:mt-0 sm:ml-2 bg-blue-100 px-2 py-0.5 rounded text-xs">ยอดรวม: {displaySummary.total.toLocaleString()} แผ่น</span></h3>
+                  {activeTab !== 'summary' && (
+                    <p className="mt-1 text-xs font-semibold text-gray-500">
+                      ช่วงข้อมูลที่แสดง: {activeTab === 'curr' ? currentResultMonthKey : previousResultMonthKey}
+                      <span className="ml-2 rounded bg-gray-100 px-2 py-0.5 text-gray-600">
+                        {activeTab === 'curr' ? currentDataSourceLabel : previousDataSourceLabel}
+                      </span>
+                    </p>
+                  )}
+                  {activeTab !== 'summary' && currentDisplayData.length === 0 && effectiveTableData.length > 0 && (
+                    <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+                      เดือนนี้มีข้อมูลสรุปในกราฟ แต่ไม่มีข้อมูลดิบที่บันทึกไว้ จึงไม่สามารถแสดงเป็นข้อมูลดิบได้ ต้องอัปโหลดไฟล์เดือนนี้แล้วกดคำนวณ/บันทึกลงกราฟใหม่
+                    </p>
+                  )}
+                </div>
                 <button onClick={exportExcel} className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded text-sm font-medium transition-colors">
                   <FileDown size={16} /> ส่งออก Excel
                 </button>
