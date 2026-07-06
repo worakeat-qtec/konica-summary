@@ -5,4 +5,5 @@ test('renders printer report workflow', () => {
   render(<App />);
   expect(screen.getByRole('heading', { name: /รายงานการใช้เครื่อง KONICA/i })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /คำนวณยอดการใช้งาน/i })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /สรุปฝ่ายขาย/i })).toBeInTheDocument();
 });

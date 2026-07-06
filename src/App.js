@@ -34,6 +34,7 @@ const DEFAULT_DEPARTMENT_MAP = {
 };
 
 const DEPARTMENTS = ['All', 'MD Office', 'Support', 'SSE1', 'SSE2', 'SSE3', 'SSE4', 'Purchasing', 'Accounting & Finance', 'HR & Admin', 'IT', 'Material Planning', 'Material Management', 'Songkla Branch', 'Others'];
+const SALES_DEPARTMENTS = ['MD Office', 'Support', 'SSE1', 'SSE2', 'SSE3', 'SSE4'];
 
 // ข้อมูลจำลองเพื่อให้กราฟแสดงทันที
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -776,16 +777,30 @@ export default function App() {
     color: acc.color + curr.color, black: acc.black + curr.black, total: acc.total + curr.total,
   }), { copy: 0, print: 0, color: 0, black: 0, total: 0 });
 
+  const currentResultPeriod = getUploadPeriodFromFiles(currFiles);
+  const currentResultMonthKey = currentResultPeriod
+    ? getMonthKey(currentResultPeriod.monthIndex, currentResultPeriod.year)
+    : getMonthKey(selMonthIdx, selYear);
+  const previousResultPeriod = getUploadPeriodFromFiles(prevFiles);
+  const previousResultMonthKey = previousResultPeriod
+    ? getMonthKey(previousResultPeriod.monthIndex, previousResultPeriod.year)
+    : getPreviousMonthKey(currentResultPeriod?.monthIndex ?? selMonthIdx, currentResultPeriod?.year ?? selYear);
+
   const getTabTitle = () => {
     if (activeTab === 'summary') return 'ตารางสรุปรายบุคคล (สรุปยอดลบกันแล้ว)';
-    if (activeTab === 'curr') return 'ข้อมูลที่อ่านได้ดิบ: เดือนปัจจุบัน';
-    return 'ข้อมูลที่อ่านได้ดิบ: เดือนก่อนหน้า';
+    if (activeTab === 'curr') return `ข้อมูลที่อ่านได้ดิบ: เดือนปัจจุบัน (${currentResultMonthKey})`;
+    return `ข้อมูลที่อ่านได้ดิบ: เดือนก่อนหน้า (${previousResultMonthKey})`;
   };
 
   const getSortDirection = (key) => sortConfig.key === key ? sortConfig.direction : undefined;
   const sortIcon = (key) => sortConfig.key === key ? (sortConfig.direction === 'asc' ? '▲' : '▼') : '';
   const formatDelta = (value, percent) => `${value >= 0 ? '+' : '-'}${Math.abs(value).toLocaleString()} (${value >= 0 ? '+' : '-'}${Math.abs(percent).toFixed(2)}%)`;
   const getStackTotal = (row) => row.copy + row.print + row.color + row.black;
+  const formatSignedNumber = (value) => `${value >= 0 ? '+' : '-'}${Math.abs(value).toLocaleString()}`;
+  const getChangePercent = (previousTotal, latestTotal) => {
+    if (previousTotal === 0) return latestTotal === 0 ? 0 : 100;
+    return ((latestTotal - previousTotal) / previousTotal) * 100;
+  };
 
   const SortableHeader = ({ sortKey, children, align = 'left', highlight = false }) => {
     const direction = getSortDirection(sortKey);
@@ -907,6 +922,70 @@ export default function App() {
     ? `ทั้งปี ${selYear}`
     : getMonthKey(activePeriodMonthIdx, activePeriodYear);
   const filteredReportHistory = getFilteredReportHistory();
+  const salesLatestKey = getMonthKey(selMonthIdx, selYear);
+  const salesPreviousYearKey = getMonthKey(selMonthIdx, Number(selYear) - 1);
+  const salesComparison = (() => {
+    const emptyMetrics = () => ({ copy: 0, print: 0, color: 0, black: 0, total: 0 });
+    const sumByDepartment = (record) => {
+      const byDepartment = SALES_DEPARTMENTS.reduce((acc, dept) => {
+        acc[dept] = emptyMetrics();
+        return acc;
+      }, {});
+
+      if (!record) return byDepartment;
+
+      getReportUsersForMonth(record).forEach(user => {
+        const dept = departmentMap[user.name] || 'Others';
+        if (!SALES_DEPARTMENTS.includes(dept)) return;
+
+        byDepartment[dept].copy += user.copy || 0;
+        byDepartment[dept].print += user.print || 0;
+        byDepartment[dept].color += user.color || 0;
+        byDepartment[dept].black += user.black || 0;
+        byDepartment[dept].total += getStackTotal(user);
+      });
+
+      return byDepartment;
+    };
+
+    const latestRecord = historyData.find(item => item.month === salesLatestKey);
+    const previousRecord = historyData.find(item => item.month === salesPreviousYearKey);
+    const latestByDepartment = sumByDepartment(latestRecord);
+    const previousByDepartment = sumByDepartment(previousRecord);
+
+    const rows = SALES_DEPARTMENTS.map(dept => {
+      const previous = previousByDepartment[dept] || emptyMetrics();
+      const latest = latestByDepartment[dept] || emptyMetrics();
+      const change = latest.total - previous.total;
+      const percent = getChangePercent(previous.total, latest.total);
+      return { dept, previous, latest, change, percent };
+    });
+
+    const totals = rows.reduce((acc, row) => {
+      acc.previous.copy += row.previous.copy;
+      acc.previous.print += row.previous.print;
+      acc.previous.color += row.previous.color;
+      acc.previous.black += row.previous.black;
+      acc.previous.total += row.previous.total;
+      acc.latest.copy += row.latest.copy;
+      acc.latest.print += row.latest.print;
+      acc.latest.color += row.latest.color;
+      acc.latest.black += row.latest.black;
+      acc.latest.total += row.latest.total;
+      return acc;
+    }, { previous: emptyMetrics(), latest: emptyMetrics() });
+
+    return {
+      rows,
+      totals: {
+        ...totals,
+        change: totals.latest.total - totals.previous.total,
+        percent: getChangePercent(totals.previous.total, totals.latest.total)
+      },
+      hasLatest: Boolean(latestRecord),
+      hasPrevious: Boolean(previousRecord)
+    };
+  })();
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-8 font-sans text-gray-800">
@@ -1099,6 +1178,13 @@ export default function App() {
                   className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors flex items-center gap-2 ${chartView === 'individual' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
                 >
                   <Users size={16} /> รายบุคคล (แยกแผนก)
+                </button>
+                <button
+                  onClick={() => setChartView('sales')}
+                  aria-pressed={chartView === 'sales'}
+                  className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors flex items-center gap-2 ${chartView === 'sales' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                >
+                  <Calculator size={16} /> สรุปฝ่ายขาย
                 </button>
               </div>
             </div>
@@ -1453,6 +1539,94 @@ export default function App() {
                 )}
               </div>
             )}
+
+            {chartView === 'sales' && (
+              <div className="p-6 pt-8">
+                <div className="mb-5 flex flex-col gap-2 text-center">
+                  <h3 className="text-lg font-bold text-gray-800">
+                    สรุปยอดฝ่ายขาย | {salesPreviousYearKey} เทียบ {salesLatestKey}
+                  </h3>
+                  <p className="text-sm text-gray-500">
+                    MD Office, Support, SSE1, SSE2, SSE3, SSE4
+                  </p>
+                </div>
+
+                {(!salesComparison.hasLatest || !salesComparison.hasPrevious) && (
+                  <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700" role="status">
+                    {!salesComparison.hasPrevious && <span className="block">ยังไม่มีข้อมูลเดือนเดียวกันของปีก่อน {salesPreviousYearKey} ในประวัติที่บันทึกไว้</span>}
+                    {!salesComparison.hasLatest && <span className="block">ยังไม่มีข้อมูลเดือนล่าสุด {salesLatestKey} ในประวัติที่บันทึกไว้</span>}
+                  </div>
+                )}
+
+                <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-3">
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                    <p className="text-xs font-semibold uppercase text-gray-500">ปีก่อนหน้า</p>
+                    <p className="mt-1 text-lg font-bold text-gray-800">{salesPreviousYearKey}</p>
+                    <p className="mt-2 text-2xl font-bold text-gray-900">{salesComparison.totals.previous.total.toLocaleString()}</p>
+                  </div>
+                  <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+                    <p className="text-xs font-semibold uppercase text-blue-600">เดือนล่าสุด</p>
+                    <p className="mt-1 text-lg font-bold text-blue-900">{salesLatestKey}</p>
+                    <p className="mt-2 text-2xl font-bold text-blue-700">{salesComparison.totals.latest.total.toLocaleString()}</p>
+                  </div>
+                  <div className={`rounded-lg border p-4 ${salesComparison.totals.change >= 0 ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>
+                    <p className={`text-xs font-semibold uppercase ${salesComparison.totals.change >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>เปลี่ยนแปลง</p>
+                    <p className={`mt-1 text-lg font-bold ${salesComparison.totals.change >= 0 ? 'text-emerald-800' : 'text-red-800'}`}>{formatSignedNumber(salesComparison.totals.change)}</p>
+                    <p className={`mt-2 text-2xl font-bold ${salesComparison.totals.change >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>{salesComparison.totals.percent.toFixed(2)}%</p>
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto rounded-lg border border-gray-200">
+                  <table className="w-full min-w-[1100px] border-collapse text-sm">
+                    <caption className="sr-only">สรุปยอดฝ่ายขายเทียบเดือนเดียวกันของปีก่อนหน้ากับปีปัจจุบัน</caption>
+                    <thead>
+                      <tr className="border-b border-gray-200 bg-gray-100 text-gray-700">
+                        <th scope="col" rowSpan="2" className="sticky left-0 z-10 w-36 bg-gray-100 p-3 text-left font-bold">แผนก</th>
+                        <th scope="colgroup" colSpan="5" className="border-l border-gray-200 p-2 text-center font-bold">{salesPreviousYearKey}</th>
+                        <th scope="colgroup" colSpan="5" className="border-l border-gray-200 p-2 text-center font-bold">{salesLatestKey}</th>
+                        <th scope="colgroup" colSpan="2" className="border-l border-gray-200 p-2 text-center font-bold">เปรียบเทียบ</th>
+                      </tr>
+                      <tr className="border-b border-gray-200 bg-gray-50 text-xs text-gray-600">
+                        {['Copy', 'Print', 'Color', 'Black', 'รวม'].map(label => (
+                          <th key={`prev-${label}`} scope="col" className="border-l border-gray-200 p-2 text-right font-semibold">{label}</th>
+                        ))}
+                        {['Copy', 'Print', 'Color', 'Black', 'รวม'].map(label => (
+                          <th key={`latest-${label}`} scope="col" className="border-l border-gray-200 p-2 text-right font-semibold">{label}</th>
+                        ))}
+                        <th scope="col" className="border-l border-gray-200 p-2 text-right font-semibold">ผลต่าง</th>
+                        <th scope="col" className="border-l border-gray-200 p-2 text-right font-semibold">%</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {salesComparison.rows.map(row => (
+                        <tr key={row.dept} className="hover:bg-gray-50">
+                          <th scope="row" className="sticky left-0 z-10 bg-white p-3 text-left font-semibold text-gray-800">{row.dept}</th>
+                          {[row.previous.copy, row.previous.print, row.previous.color, row.previous.black, row.previous.total].map((value, index) => (
+                            <td key={`prev-${row.dept}-${index}`} className={`border-l border-gray-100 p-2 text-right ${index === 4 ? 'font-bold text-gray-900' : 'text-gray-600'}`}>{value.toLocaleString()}</td>
+                          ))}
+                          {[row.latest.copy, row.latest.print, row.latest.color, row.latest.black, row.latest.total].map((value, index) => (
+                            <td key={`latest-${row.dept}-${index}`} className={`border-l border-gray-100 p-2 text-right ${index === 4 ? 'font-bold text-blue-700' : 'text-gray-600'}`}>{value.toLocaleString()}</td>
+                          ))}
+                          <td className={`border-l border-gray-100 p-2 text-right font-bold ${row.change >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatSignedNumber(row.change)}</td>
+                          <td className={`border-l border-gray-100 p-2 text-right font-bold ${row.change >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{row.percent.toFixed(2)}%</td>
+                        </tr>
+                      ))}
+                      <tr className="border-t-2 border-gray-300 bg-gray-50 font-bold">
+                        <th scope="row" className="sticky left-0 z-10 bg-gray-50 p-3 text-left text-gray-900">รวมฝ่ายขาย</th>
+                        {[salesComparison.totals.previous.copy, salesComparison.totals.previous.print, salesComparison.totals.previous.color, salesComparison.totals.previous.black, salesComparison.totals.previous.total].map((value, index) => (
+                          <td key={`prev-total-${index}`} className="border-l border-gray-200 p-2 text-right text-gray-900">{value.toLocaleString()}</td>
+                        ))}
+                        {[salesComparison.totals.latest.copy, salesComparison.totals.latest.print, salesComparison.totals.latest.color, salesComparison.totals.latest.black, salesComparison.totals.latest.total].map((value, index) => (
+                          <td key={`latest-total-${index}`} className="border-l border-gray-200 p-2 text-right text-blue-700">{value.toLocaleString()}</td>
+                        ))}
+                        <td className={`border-l border-gray-200 p-2 text-right ${salesComparison.totals.change >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>{formatSignedNumber(salesComparison.totals.change)}</td>
+                        <td className={`border-l border-gray-200 p-2 text-right ${salesComparison.totals.change >= 0 ? 'text-emerald-700' : 'text-red-700'}`}>{salesComparison.totals.percent.toFixed(2)}%</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
             
             <div className="flex flex-wrap justify-center mt-2 pb-4 gap-6 text-sm text-gray-600 font-bold border-t border-gray-100 pt-4">
               <span className="flex items-center gap-2"><span className="w-4 h-4 rounded-sm shadow-sm" style={{ backgroundColor: COLORS.copy }}></span> Copy</span>
@@ -1473,10 +1647,10 @@ export default function App() {
                 <Calculator size={18} /> สรุปยอด (ลบกันแล้ว)
               </button>
               <button type="button" role="tab" aria-selected={activeTab === 'curr'} onClick={() => setActiveTab('curr')} className={`px-4 py-2.5 rounded-lg font-medium text-sm flex items-center gap-2 transition-colors ${activeTab === 'curr' ? 'bg-blue-600 text-white shadow' : 'bg-transparent text-gray-600 hover:bg-gray-200'}`}>
-                <Search size={18} /> ข้อมูลที่อ่านได้: เดือนปัจจุบัน
+                <Search size={18} /> ข้อมูลที่อ่านได้: เดือนปัจจุบัน <span className={`text-xs ${activeTab === 'curr' ? 'text-blue-100' : 'text-gray-500'}`}>({currentResultMonthKey})</span>
               </button>
               <button type="button" role="tab" aria-selected={activeTab === 'prev'} onClick={() => setActiveTab('prev')} className={`px-4 py-2.5 rounded-lg font-medium text-sm flex items-center gap-2 transition-colors ${activeTab === 'prev' ? 'bg-blue-600 text-white shadow' : 'bg-transparent text-gray-600 hover:bg-gray-200'}`}>
-                <Search size={18} /> ข้อมูลที่อ่านได้: เดือนก่อนหน้า
+                <Search size={18} /> ข้อมูลที่อ่านได้: เดือนก่อนหน้า <span className={`text-xs ${activeTab === 'prev' ? 'text-blue-100' : 'text-gray-500'}`}>({previousResultMonthKey})</span>
               </button>
             </div>
 
