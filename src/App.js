@@ -1162,13 +1162,24 @@ export default function App() {
     }).sort((a, b) => parseHistoryMonth(a.month).monthIndex - parseHistoryMonth(b.month).monthIndex);
   }, [historyData, selYear]);
 
-  const individualHistorySource = useMemo(() => {
-    return overallHistory.filter(item => {
-      if (individualPeriod === 'year') return true;
-      const parsed = parseHistoryMonth(item.month);
-      return parsed.monthIndex === Number(activePeriodMonthIdx);
+  const individualMonthKeys = useMemo(() => {
+    const endMonth = Number(activePeriodMonthIdx);
+    const endYear = Number(activePeriodYear);
+    return Array.from({ length: 3 }, (_, offset) => {
+      const absoluteMonth = (endYear * 12) + endMonth - (2 - offset);
+      const monthIndex = absoluteMonth % 12;
+      const year = Math.floor(absoluteMonth / 12);
+      return `${MONTHS[monthIndex]}-${year}`;
     });
-  }, [overallHistory, individualPeriod, activePeriodMonthIdx]);
+  }, [activePeriodMonthIdx, activePeriodYear]);
+
+  const individualHistorySource = useMemo(() => {
+    if (individualPeriod === 'year') return overallHistory;
+    const monthOrder = new Map(individualMonthKeys.map((month, index) => [month, index]));
+    return historyData
+      .filter(item => monthOrder.has(item.month))
+      .sort((a, b) => monthOrder.get(a.month) - monthOrder.get(b.month));
+  }, [historyData, overallHistory, individualPeriod, individualMonthKeys]);
 
   // -------------------------------------------------------------
   // กราฟภาพรวม (Overall Chart)
@@ -1219,16 +1230,42 @@ export default function App() {
   const userGroupWidth = Math.max(individualHistory.length * 45, 160); // 👈 เพิ่มความกว้างต่อบุคคลเป็นอย่างน้อย 160px
   const indvChartWidth = Math.max(900, displayUsers.length * userGroupWidth);
 
-  const getShortThMonth = (enMonthStr) => {
+  const getShortMonth = (enMonthStr) => {
     const [mStr] = enMonthStr.split('-');
     const idx = MONTHS.indexOf(mStr);
-    const thShort = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
-    return idx >= 0 ? thShort[idx] : mStr;
+    if (idx >= 0) return MONTHS[idx];
+    const thaiMonthMap = {
+      'ม.ค.': 'Jan',
+      'ก.พ.': 'Feb',
+      'มี.ค.': 'Mar',
+      'เม.ย.': 'Apr',
+      'พ.ค.': 'May',
+      'มิ.ย.': 'Jun',
+      'ก.ค.': 'Jul',
+      'ส.ค.': 'Aug',
+      'ก.ย.': 'Sep',
+      'ต.ค.': 'Oct',
+      'พ.ย.': 'Nov',
+      'ธ.ค.': 'Dec',
+      'มกราคม': 'Jan',
+      'กุมภาพันธ์': 'Feb',
+      'มีนาคม': 'Mar',
+      'เมษายน': 'Apr',
+      'พฤษภาคม': 'May',
+      'มิถุนายน': 'Jun',
+      'กรกฎาคม': 'Jul',
+      'สิงหาคม': 'Aug',
+      'กันยายน': 'Sep',
+      'ตุลาคม': 'Oct',
+      'พฤศจิกายน': 'Nov',
+      'ธันวาคม': 'Dec'
+    };
+    return thaiMonthMap[mStr] || mStr;
   };
 
   const individualPeriodLabel = individualPeriod === 'year'
     ? `ทั้งปี ${selYear}`
-    : getMonthKey(activePeriodMonthIdx, activePeriodYear);
+    : `${individualMonthKeys[0]} - ${individualMonthKeys[2]}`;
   const filteredReportHistory = getFilteredReportHistory();
   const salesLatestKey = getMonthKey(selMonthIdx, selYear);
   const salesPreviousYearKey = getMonthKey(selMonthIdx, Number(selYear) - 1);
@@ -1527,7 +1564,7 @@ export default function App() {
                   <div>
                     <label htmlFor="individual-period" className="block text-xs font-semibold text-gray-500 mb-1">ช่วงเวลา</label>
                     <select id="individual-period" className="min-w-[150px] border border-gray-300 rounded px-2 py-1.5 text-sm bg-white outline-none focus:ring-2 focus:ring-blue-200" value={individualPeriod} onChange={e => setIndividualPeriod(e.target.value)}>
-                      <option value="month">เดือนที่เลือก</option>
+                      <option value="month">ย้อนหลัง 3 เดือน</option>
                       <option value="year">ทั้งปี</option>
                     </select>
                   </div>
@@ -1704,16 +1741,16 @@ export default function App() {
                           <div key={i} className="flex-1 flex flex-col items-center justify-end h-full relative group" title={`${tooltip}${resetLabel}`}>
                             <div className="w-full max-w-[120px] flex items-end justify-center gap-1.5 h-full z-0 px-2">
                               <div aria-label={`${d.month} Copy ${d.copy.toLocaleString()} แผ่น`} className="flex-1 rounded-t-sm relative flex justify-center hover:brightness-95" style={{ backgroundColor: COLORS.copy, height: `${(d.copy/yMax)*100}%`, minHeight: d.copy > 0?'2px':'0' }}>
-                                {d.copy > 0 && <span className="absolute -top-10 text-[11px] font-bold text-gray-700 -rotate-90 whitespace-nowrap">{d.copy.toLocaleString()}</span>}
+                                {d.copy > 0 && <span className="absolute -top-5 text-[11px] font-bold text-gray-700 whitespace-nowrap">{d.copy.toLocaleString()}</span>}
                               </div>
                               <div aria-label={`${d.month} Print ${d.print.toLocaleString()} แผ่น`} className="flex-1 rounded-t-sm relative flex justify-center hover:brightness-95" style={{ backgroundColor: COLORS.print, height: `${(d.print/yMax)*100}%`, minHeight: d.print > 0?'2px':'0' }}>
-                                {d.print > 0 && <span className="absolute -top-12 text-[11px] font-bold text-gray-700 -rotate-90 whitespace-nowrap">{d.print.toLocaleString()}</span>}
+                                {d.print > 0 && <span className="absolute -top-5 text-[11px] font-bold text-gray-700 whitespace-nowrap">{d.print.toLocaleString()}</span>}
                               </div>
                               <div aria-label={`${d.month} Color ${d.color.toLocaleString()} แผ่น`} className="flex-1 rounded-t-sm relative flex justify-center hover:brightness-95" style={{ backgroundColor: COLORS.color, height: `${(d.color/yMax)*100}%`, minHeight: d.color > 0?'2px':'0' }}>
-                                {d.color > 0 && <span className="absolute -top-10 text-[11px] font-bold text-gray-700 -rotate-90 whitespace-nowrap">{d.color.toLocaleString()}</span>}
+                                {d.color > 0 && <span className="absolute -top-5 text-[11px] font-bold text-gray-700 whitespace-nowrap">{d.color.toLocaleString()}</span>}
                               </div>
                               <div aria-label={`${d.month} Black ${d.black.toLocaleString()} แผ่น`} className="flex-1 rounded-t-sm relative flex justify-center hover:brightness-95" style={{ backgroundColor: COLORS.black, height: `${(d.black/yMax)*100}%`, minHeight: d.black > 0?'2px':'0' }}>
-                                {d.black > 0 && <span className="absolute -top-12 text-[11px] font-bold text-gray-700 -rotate-90 whitespace-nowrap">{d.black.toLocaleString()}</span>}
+                                {d.black > 0 && <span className="absolute -top-5 text-[11px] font-bold text-gray-700 whitespace-nowrap">{d.black.toLocaleString()}</span>}
                               </div>
                             </div>
 
@@ -1846,7 +1883,7 @@ export default function App() {
                                         )}
 
                                         <div className="absolute -bottom-5 text-[10px] font-semibold text-gray-500 w-full text-center">
-                                          {getShortThMonth(h.month)}
+                                          {getShortMonth(h.month)}
                                         </div>
                                       </div>
                                     )
