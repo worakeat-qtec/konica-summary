@@ -1787,6 +1787,9 @@ export default function App() {
 
                             <div className="absolute w-full flex justify-center pointer-events-none" style={{ bottom: `${hTotalLine}%`, zIndex: 20 }}>
                               <div className="relative flex flex-col items-center">
+                                <div className="absolute bottom-4 bg-[#f59e0b] text-white text-xs font-bold px-2.5 py-1 rounded shadow-md whitespace-nowrap border border-white">
+                                  {d.total.toLocaleString()}
+                                </div>
                                 <div className="w-3.5 h-3.5 bg-white border-2 border-[#f59e0b] rounded-full shadow-sm"></div>
                                 {i > 0 && (
                                   <div className={`absolute top-4 text-[10px] font-bold px-1.5 py-0.5 rounded border bg-white/85 whitespace-nowrap shadow-sm ${diff >= 0 ? 'text-[#059669] border-emerald-200' : 'text-[#dc2626] border-red-200'}`}>
