@@ -35,6 +35,7 @@ const DEFAULT_DEPARTMENT_MAP = {
 
 const DEPARTMENTS = ['All', 'MD Office', 'Support', 'SSE1', 'SSE2', 'SSE3', 'SSE4', 'Purchasing', 'Accounting & Finance', 'HR & Admin', 'IT', 'Material Planning', 'Material Management', 'Songkla Branch', 'Others'];
 const SALES_DEPARTMENTS = ['MD Office', 'Support', 'SSE1', 'SSE2', 'SSE3', 'SSE4'];
+const MIN_TRUSTED_RAW_COUNTER_PARSER_VERSION = 2;
 const RAW_COUNTER_PARSER_VERSION = 3;
 
 // ข้อมูลจำลองเพื่อให้กราฟแสดงทันที
@@ -57,6 +58,8 @@ export default function App() {
   const [tableData, setTableData] = useState([]);
   const [rawPrevData, setRawPrevData] = useState([]);
   const [rawCurrData, setRawCurrData] = useState([]);
+  const [isMeterResetMonth, setIsMeterResetMonth] = useState(false);
+  const [calculatedMeterResetMonth, setCalculatedMeterResetMonth] = useState(false);
   
   const [activeTab, setActiveTab] = useState('summary');
   const [historyData, setHistoryData] = useState([]);
@@ -496,6 +499,8 @@ export default function App() {
     return `${MONTHS[prevMonth]}-${prevYear}`;
   };
 
+  const isHistoryMeterReset = (monthKey) => Boolean(historyData.find(item => item.month === monthKey)?.isMeterReset);
+
   const calculateData = async () => {
     try {
       setError('');
@@ -517,10 +522,13 @@ export default function App() {
       }
 
       const prevKey = getPreviousMonthKey(activeMonthIdx, activeYear);
+      const useMeterReset = isMeterResetMonth;
       const prevFromBackup = prevAll.length === 0 ? (counterHistory[prevKey] || []) : [];
       const effectivePrevAll = prevAll.length > 0 ? prevAll : prevFromBackup;
 
-      if (prevAll.length === 0 && prevFromBackup.length > 0) {
+      if (useMeterReset) {
+        showToast(`เดือนเริ่มมิเตอร์ใหม่ ระบบใช้ยอดเดือนปัจจุบันโดยตรง ไม่ลบกับ ${prevKey}`);
+      } else if (prevAll.length === 0 && prevFromBackup.length > 0) {
         showToast(`ใช้ข้อมูลเดือนก่อนหน้า ${prevKey} จากระบบอัตโนมัติ`);
       } else if (prevAll.length === 0) {
         showToast(`ยังไม่มี baseline เดือนก่อนหน้า ${prevKey} ระบบจะคิดเดือนก่อนเป็น 0`);
@@ -538,13 +546,14 @@ export default function App() {
       Object.keys(currMap).forEach(name => {
         const curr = currMap[name];
         // หากไม่มีข้อมูลเดือนก่อนหน้า (เช่น พนักงานใหม่ หรือ เครื่องใหม่) จะตีค่าเป็น 0
-        const prev = prevMap[name] || { copy: 0, print: 0, color: 0, black: 0 };
+        const prev = useMeterReset ? { copy: 0, print: 0, color: 0, black: 0 } : (prevMap[name] || { copy: 0, print: 0, color: 0, black: 0 });
         const calc = (c, p) => (c >= p ? c - p : c); 
         const copy = calc(curr.copy, prev.copy), print = calc(curr.print, prev.print);
         finalData.push({ name, copy, print, color: calc(curr.color, prev.color), black: calc(curr.black, prev.black), total: copy + print });
       });
 
       setTableData(finalData);
+      setCalculatedMeterResetMonth(useMeterReset);
       setActiveTab('summary');
     } catch (err) { setError('เกิดข้อผิดพลาดในการอ่านไฟล์ กรุณาตรวจสอบรูปแบบไฟล์อีกครั้ง'); }
   };
@@ -571,7 +580,7 @@ export default function App() {
       setSelMonthIdx(activeMonthIdx);
       setSelYear(activeYear);
     }
-    const newEntry = { month: monthStr, ...totals, users: usersData };
+    const newEntry = { month: monthStr, ...totals, users: usersData, isMeterReset: calculatedMeterResetMonth };
     
     const existingIdx = historyData.findIndex(h => h.month === monthStr);
     let newHistory;
@@ -670,23 +679,27 @@ export default function App() {
 
   const getUsersFromCounterHistory = (monthKey) => {
     const currentRows = counterHistory[monthKey] || [];
+    const isResetMonth = isHistoryMeterReset(monthKey);
     const previousKey = getPreviousHistoryKey(monthKey);
     const previousRows = counterHistory[previousKey] || [];
-    if (
-      counterHistoryMeta[monthKey]?.parserVersion !== RAW_COUNTER_PARSER_VERSION ||
-      counterHistoryMeta[previousKey]?.parserVersion !== RAW_COUNTER_PARSER_VERSION
-    ) return [];
-    if (currentRows.length === 0 || previousRows.length === 0) return [];
+    if (Number(counterHistoryMeta[monthKey]?.parserVersion || 0) < MIN_TRUSTED_RAW_COUNTER_PARSER_VERSION) return [];
+    if (currentRows.length === 0) return [];
 
     const currentMap = aggregateUsage(currentRows);
+    if (isResetMonth) return rowsFromUsageMap(currentMap);
+
+    if (Number(counterHistoryMeta[previousKey]?.parserVersion || 0) < MIN_TRUSTED_RAW_COUNTER_PARSER_VERSION) return [];
+    if (previousRows.length === 0) return [];
+
     const previousMap = aggregateUsage(previousRows);
 
     return Object.keys(currentMap).map(name => {
       const previous = previousMap[name] || { copy: 0, print: 0, color: 0, black: 0 };
-      const copy = currentMap[name].copy - previous.copy;
-      const print = currentMap[name].print - previous.print;
-      const color = currentMap[name].color - previous.color;
-      const black = currentMap[name].black - previous.black;
+      const calc = (current, previousValue) => (current >= previousValue ? current - previousValue : current);
+      const copy = calc(currentMap[name].copy, previous.copy);
+      const print = calc(currentMap[name].print, previous.print);
+      const color = calc(currentMap[name].color, previous.color);
+      const black = calc(currentMap[name].black, previous.black);
       return { name, copy, print, color, black, total: copy + print };
     });
   };
@@ -725,7 +738,8 @@ export default function App() {
       item.color || 0,
       item.black || 0,
       item.total || 0,
-      getReportUsersForMonth(item).length
+      getReportUsersForMonth(item).length,
+      item.isMeterReset ? 'Yes' : 'No'
     ]);
 
     const departmentMapRows = {};
@@ -804,7 +818,7 @@ export default function App() {
     }
 
     if (includeSummary) {
-      sheets.push(worksheetXml('Summary', ['Month', 'Copy', 'Print', 'Color', 'Black', 'Total', 'Users'], summaryRows));
+      sheets.push(worksheetXml('Summary', ['Month', 'Copy', 'Print', 'Color', 'Black', 'Total', 'Users', 'Meter Reset'], summaryRows));
     }
 
     if (includeDepartment) {
@@ -1031,11 +1045,14 @@ export default function App() {
     ? getMonthKey(previousResultPeriod.monthIndex, previousResultPeriod.year)
     : getPreviousHistoryKey(currentResultMonthKey);
 
-  const hasTrustedCurrentRaw = counterHistoryMeta[currentResultMonthKey]?.parserVersion === RAW_COUNTER_PARSER_VERSION;
-  const hasTrustedPreviousRaw = counterHistoryMeta[previousResultMonthKey]?.parserVersion === RAW_COUNTER_PARSER_VERSION;
+  const hasTrustedCurrentRaw = Number(counterHistoryMeta[currentResultMonthKey]?.parserVersion || 0) >= MIN_TRUSTED_RAW_COUNTER_PARSER_VERSION;
+  const hasTrustedPreviousRaw = Number(counterHistoryMeta[previousResultMonthKey]?.parserVersion || 0) >= MIN_TRUSTED_RAW_COUNTER_PARSER_VERSION;
   const savedRawCurrData = hasTrustedCurrentRaw ? rowsFromUsageMap(aggregateUsage(counterHistory[currentResultMonthKey] || [])) : [];
   const savedRawPrevData = hasTrustedPreviousRaw ? rowsFromUsageMap(aggregateUsage(counterHistory[previousResultMonthKey] || [])) : [];
   const savedHistoryEntry = historyData.find(item => item.month === currentResultMonthKey);
+  const currentResultIsMeterReset = tableData.length > 0 && currentResultPeriod
+    ? calculatedMeterResetMonth
+    : isHistoryMeterReset(currentResultMonthKey);
   const savedComparisonData = getUsersFromCounterHistory(currentResultMonthKey);
   const effectiveTableData = tableData.length > 0
     ? tableData
@@ -1134,7 +1151,7 @@ export default function App() {
   const activePeriodYear = currentUploadPeriod?.year ?? selYear;
   const activePreviousMonthKey = getPreviousMonthKey(activePeriodMonthIdx, activePeriodYear);
   const activePeriodSource = currentUploadPeriod ? 'จากไฟล์ปัจจุบันที่อัปโหลด' : 'จากเดือนที่เลือก';
-  const activeBaselineStatus = currentUploadPeriod
+  const activeBaselineStatus = isMeterResetMonth ? 'เลือกเป็นเดือนเริ่มมิเตอร์ใหม่ ใช้ยอดปัจจุบันโดยตรง' : currentUploadPeriod
     ? (counterHistory[activePreviousMonthKey] ? 'พร้อมใช้เป็นฐานคำนวณ' : 'ยังไม่มีข้อมูลฐาน ต้องอัปโหลดไฟล์เดือนก่อนหน้าหรือบันทึกเดือนก่อนก่อน')
     : 'รอเลือกไฟล์เดือนปัจจุบันเพื่อยืนยันฐานคำนวณ';
 
@@ -1308,6 +1325,18 @@ export default function App() {
                 {activeBaselineStatus}
               </span>
             </p>
+            <label className="mt-3 flex max-w-3xl cursor-pointer items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              <input
+                type="checkbox"
+                checked={isMeterResetMonth}
+                onChange={(e) => setIsMeterResetMonth(e.target.checked)}
+                className="mt-1 h-4 w-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+              />
+              <span>
+                <span className="font-bold">เดือนนี้เป็นเดือนเริ่มมิเตอร์ใหม่</span>
+                <span className="block text-xs font-semibold text-amber-700">ถ้าติ๊ก ระบบจะใช้ยอดเดือนปัจจุบันโดยตรง และไม่นำไปลบกับเดือนก่อนหน้า</span>
+              </span>
+            </label>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-5">
@@ -1668,10 +1697,11 @@ export default function App() {
                         const hTotalLine = (d.total / yMaxLine) * 100;
                         const diff = i > 0 ? d.total - overallHistory[i-1].total : 0;
                         const diffPercent = i > 0 && overallHistory[i-1].total > 0 ? (diff / overallHistory[i-1].total) * 100 : 0;
+                        const resetLabel = d.isMeterReset ? ' | เริ่มมิเตอร์ใหม่' : '';
                         const tooltip = `${d.month} | รวม ${d.total.toLocaleString()} แผ่น | Copy ${d.copy.toLocaleString()} | Print ${d.print.toLocaleString()} | Color ${d.color.toLocaleString()} | Black ${d.black.toLocaleString()}${i > 0 ? ` | เปลี่ยนแปลง ${formatDelta(diff, diffPercent)}` : ''}`;
                         
                         return (
-                          <div key={i} className="flex-1 flex flex-col items-center justify-end h-full relative group" title={tooltip}>
+                          <div key={i} className="flex-1 flex flex-col items-center justify-end h-full relative group" title={`${tooltip}${resetLabel}`}>
                             <div className="w-full max-w-[120px] flex items-end justify-center gap-1.5 h-full z-0 px-2">
                               <div aria-label={`${d.month} Copy ${d.copy.toLocaleString()} แผ่น`} className="flex-1 rounded-t-sm relative flex justify-center hover:brightness-95" style={{ backgroundColor: COLORS.copy, height: `${(d.copy/yMax)*100}%`, minHeight: d.copy > 0?'2px':'0' }}>
                                 {d.copy > 0 && <span className="absolute -top-10 text-[11px] font-bold text-gray-700 -rotate-90 whitespace-nowrap">{d.copy.toLocaleString()}</span>}
@@ -1703,6 +1733,7 @@ export default function App() {
 
                             <div className="pointer-events-none absolute left-1/2 top-3 z-30 w-56 -translate-x-1/2 rounded-lg border border-gray-200 bg-white p-3 text-left text-xs text-gray-600 opacity-0 shadow-lg transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
                               <p className="font-bold text-gray-800">{d.month}</p>
+                              {d.isMeterReset && <p className="mt-1 inline-flex rounded bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-700">เริ่มมิเตอร์ใหม่</p>}
                               <p className="mt-1">รวม {d.total.toLocaleString()} แผ่น</p>
                               <p>Copy {d.copy.toLocaleString()} | Print {d.print.toLocaleString()}</p>
                               <p>Color {d.color.toLocaleString()} | Black {d.black.toLocaleString()}</p>
@@ -1710,6 +1741,11 @@ export default function App() {
                             </div>
                             
                             <div className="absolute -bottom-6 text-sm font-bold text-gray-800 w-full text-center">{d.month}</div>
+                            {d.isMeterReset && (
+                              <div className="absolute -bottom-11 text-[10px] font-bold text-amber-600 w-full text-center">
+                                เริ่มมิเตอร์ใหม่
+                              </div>
+                            )}
                           </div>
                         )
                       })}
@@ -1920,10 +1956,10 @@ export default function App() {
             )}
             
             <div className="flex flex-wrap justify-center mt-2 pb-4 gap-6 text-sm text-gray-600 font-bold border-t border-gray-100 pt-4">
-              <span className="flex items-center gap-2"><span className="w-4 h-4 rounded-sm shadow-sm" style={{ backgroundColor: COLORS.copy }}></span> Copy</span>
-              <span className="flex items-center gap-2"><span className="w-4 h-4 rounded-sm shadow-sm" style={{ backgroundColor: COLORS.print }}></span> Printer</span>
-              <span className="flex items-center gap-2"><span className="w-4 h-4 rounded-sm shadow-sm" style={{ backgroundColor: COLORS.color }}></span> Color</span>
-              <span className="flex items-center gap-2"><span className="w-4 h-4 rounded-sm shadow-sm" style={{ backgroundColor: COLORS.black }}></span> Black</span>
+              <span className="inline-grid h-5 grid-cols-[16px_auto] items-center gap-2 leading-none"><span className="block w-4 h-4 rounded-sm shadow-sm" style={{ backgroundColor: COLORS.copy }}></span><span className="block leading-none">Copy</span></span>
+              <span className="inline-grid h-5 grid-cols-[16px_auto] items-center gap-2 leading-none"><span className="block w-4 h-4 rounded-sm shadow-sm" style={{ backgroundColor: COLORS.print }}></span><span className="block leading-none">Printer</span></span>
+              <span className="inline-grid h-5 grid-cols-[16px_auto] items-center gap-2 leading-none"><span className="block w-4 h-4 rounded-sm shadow-sm" style={{ backgroundColor: COLORS.color }}></span><span className="block leading-none">Color</span></span>
+              <span className="inline-grid h-5 grid-cols-[16px_auto] items-center gap-2 leading-none"><span className="block w-4 h-4 rounded-sm shadow-sm" style={{ backgroundColor: COLORS.black }}></span><span className="block leading-none">Black</span></span>
             </div>
             
           </div>
@@ -1957,7 +1993,9 @@ export default function App() {
               <div className="bg-white rounded-xl shadow-sm border border-amber-100 overflow-hidden">
                 <div className="p-4 border-b border-amber-100 bg-amber-50/70">
                   <h3 className="font-semibold text-amber-900">ตารางข้อมูลดิบที่ใช้เอามาลบกัน</h3>
-                  <p className="mt-1 text-xs font-semibold text-amber-700">
+                  {currentResultIsMeterReset && <span className="mt-2 inline-flex rounded bg-amber-100 px-2 py-1 text-xs font-bold text-amber-700">เดือนเริ่มมิเตอร์ใหม่: ใช้ยอดเดือนปัจจุบันโดยตรง</span>}
+                  {currentResultIsMeterReset && <p className="mt-1 text-xs font-semibold text-amber-700">ระบบใช้ข้อมูลดิบเดือนปัจจุบันเป็นยอดใช้งานโดยตรง เพราะเดือนนี้เป็นเดือนเริ่มมิเตอร์ใหม่</p>}
+                  <p className={`mt-1 text-xs font-semibold text-amber-700 ${currentResultIsMeterReset ? 'hidden' : ''}`}>
                     ระบบใช้ข้อมูลดิบเดือนปัจจุบันลบกับข้อมูลดิบเดือนก่อนหน้าเพื่อสร้างตารางเปรียบเทียบ
                   </p>
                 </div>
@@ -2016,7 +2054,9 @@ export default function App() {
                 <div className="p-4 border-b border-blue-100 bg-blue-50/60 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                   <div>
                     <h3 className="font-semibold text-blue-900">ตารางเปรียบเทียบ (ลบกันแล้ว)</h3>
-                    <p className="mt-1 text-xs font-semibold text-blue-700">
+                    {currentResultIsMeterReset && <span className="mt-2 inline-flex rounded bg-amber-100 px-2 py-1 text-xs font-bold text-amber-700">เดือนเริ่มมิเตอร์ใหม่: ไม่ลบกับเดือนก่อนหน้า</span>}
+                    {currentResultIsMeterReset && <p className="mt-1 text-xs font-semibold text-blue-700">เดือนปัจจุบัน {currentResultMonthKey} ใช้ยอดมิเตอร์เป็นยอดใช้งานโดยตรง</p>}
+                    <p className={`mt-1 text-xs font-semibold text-blue-700 ${currentResultIsMeterReset ? 'hidden' : ''}`}>
                       เดือนปัจจุบัน {currentResultMonthKey} ลบกับเดือนก่อนหน้า {previousResultMonthKey}
                     </p>
                   </div>
@@ -2060,6 +2100,7 @@ export default function App() {
               <div className="p-4 border-b border-gray-100 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 bg-gray-50">
                 <div>
                   <h3 className="font-semibold text-gray-700">{getTabTitle()} <span className="inline-flex text-blue-600 mt-1 sm:mt-0 sm:ml-2 bg-blue-100 px-2 py-0.5 rounded text-xs">ยอดรวม: {displaySummary.total.toLocaleString()} แผ่น</span></h3>
+                  {currentResultIsMeterReset && <span className="mt-2 inline-flex rounded bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700">เริ่มมิเตอร์ใหม่</span>}
                   {activeTab !== 'summary' && (
                     <p className="mt-1 text-xs font-semibold text-gray-500">
                       ช่วงข้อมูลที่แสดง: {activeTab === 'curr' ? currentResultMonthKey : previousResultMonthKey}
