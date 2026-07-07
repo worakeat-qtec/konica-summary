@@ -33,7 +33,13 @@ const DEFAULT_DEPARTMENT_MAP = {
   'monkawee': 'Songkla Branch', 'tammasarn': 'Songkla Branch'
 };
 
-const DEPARTMENTS = ['All', 'MD Office', 'Support', 'SSE1', 'SSE2', 'SSE3', 'SSE4', 'Purchasing', 'Accounting & Finance', 'HR & Admin', 'IT', 'Material Planning', 'Material Management', 'Songkla Branch', 'Others'];
+const DEPARTMENTS = ['All', 'MD Office', 'Support', 'Sales Support', 'SSE1', 'SSE2', 'SSE3', 'SSE4', 'Purchasing', 'Accounting & Finance', 'HR & Admin', 'IT', 'Material Planning', 'Material Management', 'Songkla Branch', 'Others'];
+const DEPARTMENT_GROUPS = [
+  { value: 'group-sse2-sse4', label: 'SSE2 + SSE4', departments: ['SSE2', 'SSE4'] },
+  { value: 'group-accounting-hr', label: 'Accounting & Finance + HR & Admin', departments: ['Accounting & Finance', 'HR & Admin'] },
+  { value: 'group-planning-it', label: 'Material Planning + IT', departments: ['Material Planning', 'IT'] },
+  { value: 'group-md-sales-support', label: 'MD Office + Sales Support', departments: ['MD Office', 'Sales Support'] }
+];
 const SALES_DEPARTMENTS = ['MD Office', 'Support', 'SSE1', 'SSE2', 'SSE3', 'SSE4'];
 const MIN_TRUSTED_RAW_COUNTER_PARSER_VERSION = 2;
 const RAW_COUNTER_PARSER_VERSION = 3;
@@ -1135,6 +1141,13 @@ export default function App() {
     Object.values(departmentMap).forEach(dept => values.add(dept));
     return Array.from(values);
   }, [departmentMap]);
+  const selectedDeptGroup = DEPARTMENT_GROUPS.find(group => group.value === selectedDept);
+  const selectedDeptNames = selectedDeptGroup
+    ? selectedDeptGroup.departments
+    : (selectedDept === 'All' ? [] : [selectedDept]);
+  const individualDeptLabel = selectedDept === 'All'
+    ? 'ทุกแผนก'
+    : (selectedDeptGroup ? `กลุ่ม ${selectedDeptGroup.label}` : `แผนก ${selectedDept}`);
 
   const managedUsers = useMemo(() => {
     const names = new Set(Object.keys(departmentMap));
@@ -1188,7 +1201,19 @@ export default function App() {
   const yStep = Math.ceil(maxDataVal / 10 / 1000) * 1000 || 4000;
   const yMax = yStep * 10;
   const yTicks = Array.from({length: 11}, (_, i) => i * yStep).reverse();
-  const yMaxLine = yMax * 2;
+  const percentAxisMin = -60;
+  const percentAxisMax = 100;
+  const percentTicks = Array.from({ length: 17 }, (_, i) => percentAxisMax - (i * 10));
+  const getOverallChangePercent = (index) => {
+    if (index <= 0) return 0;
+    const previousTotal = overallHistory[index - 1]?.total || 0;
+    const currentTotal = overallHistory[index]?.total || 0;
+    return previousTotal > 0 ? ((currentTotal - previousTotal) / previousTotal) * 100 : 0;
+  };
+  const getPercentBottom = (percent) => {
+    const clamped = Math.max(percentAxisMin, Math.min(percentAxisMax, percent));
+    return ((clamped - percentAxisMin) / (percentAxisMax - percentAxisMin)) * 100;
+  };
 
   // -------------------------------------------------------------
   // กราฟรายบุคคล (Individual Chart)
@@ -1204,7 +1229,7 @@ export default function App() {
       if (hiddenUsers.includes(u.name)) return;
 
       const dept = departmentMap[u.name] || 'Others';
-      if (selectedDept === 'All' || selectedDept === dept) {
+      if (selectedDept === 'All' || selectedDeptNames.includes(dept)) {
         allUsersInDeptMap[u.name] = (allUsersInDeptMap[u.name] || 0) + getStackTotal(u);
       }
     });
@@ -1572,8 +1597,14 @@ export default function App() {
                 {chartView === 'individual' && (
                   <div>
                     <label htmlFor="department-filter" className="block text-xs font-semibold text-gray-500 mb-1">แผนก</label>
-                    <select id="department-filter" className="min-w-[190px] border border-gray-300 rounded px-2 py-1.5 text-sm bg-white outline-none focus:ring-2 focus:ring-blue-200" value={selectedDept} onChange={e => setSelectedDept(e.target.value)}>
-                      {departmentOptions.map(dept => <option key={dept} value={dept}>{dept === 'All' ? 'ทุกแผนก' : dept}</option>)}
+                    <select id="department-filter" className="min-w-[230px] border border-gray-300 rounded px-2 py-1.5 text-sm bg-white outline-none focus:ring-2 focus:ring-blue-200" value={selectedDept} onChange={e => setSelectedDept(e.target.value)}>
+                      <option value="All">ทุกแผนก</option>
+                      <optgroup label="กลุ่มแผนก">
+                        {DEPARTMENT_GROUPS.map(group => <option key={group.value} value={group.value}>{group.label}</option>)}
+                      </optgroup>
+                      <optgroup label="แผนกเดี่ยว">
+                        {departmentOptions.filter(dept => dept !== 'All').map(dept => <option key={dept} value={dept}>{dept}</option>)}
+                      </optgroup>
                     </select>
                   </div>
                 )}
@@ -1722,18 +1753,18 @@ export default function App() {
                       {overallHistory.map((d, i) => {
                         if (i === 0) return null;
                         const x1 = `${((i - 1) + 0.5) * (100 / overallHistory.length)}%`;
-                        const y1 = `${100 - (overallHistory[i-1].total / yMaxLine * 100)}%`;
+                        const y1 = `${100 - getPercentBottom(getOverallChangePercent(i - 1))}%`;
                         const x2 = `${(i + 0.5) * (100 / overallHistory.length)}%`;
-                        const y2 = `${100 - (d.total / yMaxLine * 100)}%`;
+                        const y2 = `${100 - getPercentBottom(getOverallChangePercent(i))}%`;
                         return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke="#f59e0b" strokeWidth="2" strokeDasharray="6,4" />
                       })}
                     </svg>
 
                     <div className="absolute inset-0 flex">
                       {overallHistory.map((d, i) => {
-                        const hTotalLine = (d.total / yMaxLine) * 100;
+                        const diffPercent = getOverallChangePercent(i);
+                        const hTotalLine = getPercentBottom(diffPercent);
                         const diff = i > 0 ? d.total - overallHistory[i-1].total : 0;
-                        const diffPercent = i > 0 && overallHistory[i-1].total > 0 ? (diff / overallHistory[i-1].total) * 100 : 0;
                         const resetLabel = d.isMeterReset ? ' | เริ่มมิเตอร์ใหม่' : '';
                         const tooltip = `${d.month} | รวม ${d.total.toLocaleString()} แผ่น | Copy ${d.copy.toLocaleString()} | Print ${d.print.toLocaleString()} | Color ${d.color.toLocaleString()} | Black ${d.black.toLocaleString()}${i > 0 ? ` | เปลี่ยนแปลง ${formatDelta(diff, diffPercent)}` : ''}`;
                         
@@ -1756,9 +1787,6 @@ export default function App() {
 
                             <div className="absolute w-full flex justify-center pointer-events-none" style={{ bottom: `${hTotalLine}%`, zIndex: 20 }}>
                               <div className="relative flex flex-col items-center">
-                                <div className="absolute bottom-4 bg-[#f59e0b] text-white text-xs font-bold px-2.5 py-1 rounded shadow-md whitespace-nowrap border border-white">
-                                  {d.total.toLocaleString()}
-                                </div>
                                 <div className="w-3.5 h-3.5 bg-white border-2 border-[#f59e0b] rounded-full shadow-sm"></div>
                                 {i > 0 && (
                                   <div className={`absolute top-4 text-[10px] font-bold px-1.5 py-0.5 rounded border bg-white/85 whitespace-nowrap shadow-sm ${diff >= 0 ? 'text-[#059669] border-emerald-200' : 'text-[#dc2626] border-red-200'}`}>
@@ -1790,7 +1818,7 @@ export default function App() {
                   </div>
 
                   <div className="w-16 flex flex-col justify-between items-start pl-3 text-[11px] font-semibold text-amber-600 bg-white sticky right-0 z-20 h-[400px]">
-                    {yTicks.map(tick => <span key={`r-${tick}`}>{(tick * 2).toLocaleString()}</span>)}
+                    {percentTicks.map(tick => <span key={`r-percent-${tick}`}>{tick.toFixed(0)}%</span>)}
                   </div>
                 </div>
               </div>
@@ -1802,7 +1830,7 @@ export default function App() {
                 
                 <div className="flex flex-col items-center mb-6" data-html2canvas-show>
                   <h3 className="font-bold text-gray-700 text-lg mb-4">
-                    รายงานการใช้เครื่อง KONICA แบบรายบุคคล | {selectedDept !== 'All' ? `แผนก ${selectedDept}` : 'ทุกแผนก'} | {individualPeriodLabel}
+                    รายงานการใช้เครื่อง KONICA แบบรายบุคคล | {individualDeptLabel} | {individualPeriodLabel}
                   </h3>
                 </div>
 
@@ -1997,6 +2025,13 @@ export default function App() {
               <span className="inline-grid h-5 grid-cols-[16px_auto] items-center gap-2 leading-none"><span className="block w-4 h-4 rounded-sm shadow-sm" style={{ backgroundColor: COLORS.print }}></span><span className="block leading-none">Printer</span></span>
               <span className="inline-grid h-5 grid-cols-[16px_auto] items-center gap-2 leading-none"><span className="block w-4 h-4 rounded-sm shadow-sm" style={{ backgroundColor: COLORS.color }}></span><span className="block leading-none">Color</span></span>
               <span className="inline-grid h-5 grid-cols-[16px_auto] items-center gap-2 leading-none"><span className="block w-4 h-4 rounded-sm shadow-sm" style={{ backgroundColor: COLORS.black }}></span><span className="block leading-none">Black</span></span>
+              <span className="inline-grid h-5 grid-cols-[28px_auto] items-center gap-2 leading-none">
+                <span className="relative block h-4 w-7">
+                  <span className="absolute left-0 right-0 top-1/2 border-t-2 border-dashed border-[#f59e0b]"></span>
+                  <span className="absolute left-1/2 top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[#f59e0b] bg-white"></span>
+                </span>
+                <span className="block leading-none">Total</span>
+              </span>
             </div>
             
           </div>
